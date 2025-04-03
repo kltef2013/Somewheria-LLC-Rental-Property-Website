@@ -37,12 +37,12 @@ To run the application, use the following command:
 python3 app.py
 ```
 
-The application will start on `localhost:5000`. You can access it by navigating to `http://localhost:5000` in your web browser.
+The application will start on `localhost:5000`, and you can access it by navigating to `http://localhost:5000` in your web browser.
 
 ### Application Structure
 
 - **App Initialization**: The application is initialized with Flask and starts by pre-fetching properties to improve performance.
-- **Routing**: 
+- **Routing**:
   - `/` - Displays the home page.
   - `/for-rent` - Lists available properties for rent.
   - `/property/<uuid>` - Displays detailed information for a specific property.
@@ -55,6 +55,16 @@ The application will start on `localhost:5000`. You can access it by navigating 
 
 - **Performance Logging**: The application logs the time taken to respond to each request in milliseconds or seconds for performance monitoring.
 
+## Branching Strategy
+
+### Main Branch
+
+The `main` branch contains the stable version of the application, ready for production use. It is thoroughly tested and validated to ensure a smooth user experience.
+
+### Developer Branch
+
+The `dev` branch is used for ongoing development and experimentation. This branch is considered unstable and may contain features or fixes that are still in progress. Use this branch with caution.
+
 ## API Integration
 
 The application fetches property data using the following API endpoints:
@@ -62,14 +72,6 @@ The application fetches property data using the following API endpoints:
 1. `https://7pdnexz05a.execute-api.us-east-1.amazonaws.com/test/propertiesforrent`: Fetches the list of property IDs.
 2. `https://7pdnexz05a.execute-api.us-east-1.amazonaws.com/test/properties/<uuid>/details`: Fetches detailed property information.
 3. `https://7pdnexz05a.execute-api.us-east-1.amazonaws.com/test/properties/<uuid>/photos`: Fetches property photos using the UUID.
-
-## License
-
-This project does not currently have a specific license defined. Please contact Somewheria LLC for more information regarding usage.
-
-## Contact
-
-For any questions, please contact Somewheria LLC at [contact@somewheria.com](mailto:contact@somewheria.com).
 
 ---
 
