@@ -1,80 +1,103 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 import os
 import time
 import base64
 import secrets
-import smtplib
 import logging
 import requests
+import smtplib
 from io import BytesIO
-from email.message import EmailMessage
 from PIL import Image, ImageOps
+from email.message import EmailMessage
 from flask import Flask, jsonify, render_template_string, request, g, url_for
 from dotenv import load_dotenv
-
-# Load environment variables
+# App initial setup
 load_dotenv()
-
-# Initialize Flask
 app = Flask(__name__)
-
-# Setup logging
 LOG_FILE = "application.log"
-logging.basicConfig(filename=LOG_FILE, level=logging.ERROR, format='%(asctime)s:%(levelname)s:%(message)s')
-
-# Ensure 'static/uploads' folder exists for local file storage
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.ERROR,
+    format='%(asctime)s:%(levelname)s:%(message)s'
+)
 UPLOAD_FOLDER = os.path.join("static", "uploads")
+STATIC_DIR = os.path.join("static")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-# Memory Caches
+os.makedirs(STATIC_DIR, exist_ok=True)
+PROPERTY_APPTS_FILE = os.path.join(STATIC_DIR, "property_appointments.txt")
+APPOINTMENT_SUB_FILE = os.path.join(STATIC_DIR, "appointment_submissions.txt")
 properties_cache = []
 photos_cache = {}
-
-# Email Notification Setup
+########### APPOINTMENT PERSISTENCE ###########
+def print_check_file(path, purpose):
+    abs_path = os.path.abspath(path)
+    exists = os.path.exists(abs_path)
+    status = "exists" if exists else "does NOT exist"
+    print(f"[CHECK] {purpose} - {abs_path} => {status}")
+def load_appointments():
+    appts = {}
+    abs_path = os.path.abspath(PROPERTY_APPTS_FILE)
+    print(f"[LOAD] Attempting to load appointments from: {abs_path}")
+    if not os.path.exists(PROPERTY_APPTS_FILE):
+        print(f"[INFO] Appointments file does not exist yet: {abs_path}")
+        return appts
+    with open(PROPERTY_APPTS_FILE, "r", encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line: continue
+            try:
+                pid, dates = line.split(":", 1)
+                date_list = set(x for x in dates.split(",") if x)
+                appts[pid.strip()] = set(date_list)
+            except Exception:
+                continue
+    return appts
+def save_appointments(appts):
+    abs_path = os.path.abspath(PROPERTY_APPTS_FILE)
+    print(f"[SAVE] Saving appointments to: {abs_path}")
+    with open(PROPERTY_APPTS_FILE, "w", encoding='utf-8') as f:
+        for pid, date_set in appts.items():
+            out = pid + ":" + ",".join(sorted(date_set))
+            print(out, file=f)
+    print_check_file(PROPERTY_APPTS_FILE, "Appointments saved")
+def append_appointment_submission(property_id, user_name, date, tstr):
+    abs_path = os.path.abspath(APPOINTMENT_SUB_FILE)
+    print(f"[APPEND] Appending appointment to: {abs_path}")
+    with open(APPOINTMENT_SUB_FILE, "a", encoding='utf-8') as f:
+        print(f"{property_id}\t{user_name}\t{date}\t{tstr}", file=f)
+    print_check_file(APPOINTMENT_SUB_FILE, "Submission written")
+############## EMAIL and LOGGING ##############
 def send_email(subject, body):
     smtp_server = "smtp.gmail.com"
     port = 587
-    sender_email = 'your-email@gmail.com'
+    sender_email = 'anthony.j.ekberg@gmail.com'
     app_password = os.getenv('EMAIL_APP_PASSWORD')
-
     if not app_password:
         raise ValueError("No app password set in the environment")
-
     msg = EmailMessage()
     msg.set_content(body)
     msg['Subject'] = subject
     msg['From'] = sender_email
-    msg['To'] = sender_email  # Send the email to yourself
-
+    msg['To'] = sender_email
     body += "\nView application logs here: http://localhost:5000/logs"
     msg.set_content(body)
-
     try:
         with smtplib.SMTP(smtp_server, port) as server:
-            server.starttls()  # Secure the connection
+            server.starttls()
             server.login(sender_email, app_password)
             server.send_message(msg)
         print(f"Email sent: {subject}")
     except Exception as e:
         print(f"Failed to send email: {e}")
-
-# Function to log errors and send email alerts
 def log_and_notify_error(subject, error_message):
     logging.error(error_message)
     send_email(subject, error_message)
-
-# Function to notify about edited images
 def notify_image_edit(image_urls):
     subject = "Image Edited Notification"
     body = "The following image(s) have been edited:\n" + "\n".join(image_urls)
     send_email(subject, body)
-
-# Request timing demonstration
 @app.before_request
 def before_request():
     g.start_time = time.time()
-
 @app.after_request
 def after_request(response):
     if hasattr(g, "start_time"):
@@ -85,84 +108,429 @@ def after_request(response):
         else:
             print(f"Time taken for {request.path}: {elapsed_time:.2f}s")
     return response
-
-# Functions to fetch and process property data
 def letterbox_to_16_9(img: Image.Image) -> Image.Image:
     target_ratio = 16 / 9
     width, height = img.size
-    if height == 0:
-        return img
+    if height == 0: return img
     original_ratio = width / height
-    if abs(original_ratio - target_ratio) < 1e-5:
-        return img
+    if abs(original_ratio - target_ratio) < 1e-5: return img
     if original_ratio > target_ratio:
         new_width = width
         new_height = int(width / target_ratio)
     else:
         new_height = height
         new_width = int(height * target_ratio)
-    
     new_img = Image.new("RGB", (new_width, new_height), color=(0, 0, 0))
     offset_x = (new_width - width) // 2
     offset_y = (new_height - height) // 2
     new_img.paste(img, (offset_x, offset_y))
     return new_img
-
-def fetch_properties():
-    global properties_cache
-    api_url = "https://7pdnexz05a.execute-api.us-east-1.amazonaws.com/test/propertiesforrent"
+def get_base64_image_from_url(url):
     try:
-        response = requests.get(api_url)
-        response.raise_for_status()
-        data = response.json()
-        properties_cache = [fetch_property_details(uuid.strip()) for uuid in data.get("property_ids", [])]
-    except requests.ConnectionError:
-        log_and_notify_error("API Connection Error", "Failed to connect to properties API.")
-    except requests.Timeout:
-        log_and_notify_error("API Timeout Error", "Connection to properties API timed out.")
-    except requests.RequestException as e:
-        log_and_notify_error("API Request Error", f"General error occurred: {str(e)}")
-
-def fetch_property_photos(uuid):
-    photos_url = f"https://7pdnexz05a.execute-api.us-east-1.amazonaws.com/test/properties/{uuid}/photos"
-    processed_photos = []
-    try:
-        response = requests.get(photos_url, timeout=5)
-        response.raise_for_status()
-        photo_urls = response.json() if response.ok else []
-        for url in photo_urls:
-            try:
-                img_resp = requests.get(url, timeout=5)
-                img_resp.raise_for_status()
-                with Image.open(BytesIO(img_resp.content)) as img:
-                    img_16_9 = letterbox_to_16_9(ImageOps.exif_transpose(img).convert("RGB"))
-                    buffered = BytesIO()
-                    img_16_9.save(buffered, format="JPEG")
-                    encoded_img = base64.b64encode(buffered.getvalue()).decode("utf-8")
-                    processed_photos.append(f"data:image/jpeg;base64,{encoded_img}")
-            except Exception as err:
-                log_and_notify_error("Image Processing Error", f"Failed processing image {url}: {err}")
-    except requests.RequestException as e:
-        log_and_notify_error("API Photos Error", f"Failed fetching photos for {uuid}: {str(e)}")
-    photos_cache[uuid] = processed_photos
-    return processed_photos
-
-def fetch_property_details(uuid):
-    details_url = f"https://7pdnexz05a.execute-api.us-east-1.amazonaws.com/test/properties/{uuid}/details"
-    try:
-        response = requests.get(details_url)
-        response.raise_for_status()
-        property_info = response.json()
-        if "included_utilities" in property_info:
-            property_info["included_amenities"] = property_info.pop("included_utilities")
-        property_info.setdefault("blurb", "This is a beautiful property in a great location.")
-        property_info["photos"] = fetch_property_photos(uuid)
-        return property_info
-    except requests.RequestException as e:
-        log_and_notify_error("API Property Details Error", f"Error fetching details for {uuid}: {str(e)}")
+        img_resp = requests.get(url, timeout=10)
+        img_resp.raise_for_status()
+        with Image.open(BytesIO(img_resp.content)) as img:
+            img_16_9 = letterbox_to_16_9(ImageOps.exif_transpose(img).convert("RGB"))
+            buffered = BytesIO()
+            img_16_9.save(buffered, format="JPEG")
+            encoded_img = base64.b64encode(buffered.getvalue()).decode("utf-8")
+            return f"data:image/jpeg;base64,{encoded_img}"
+    except Exception as err:
+        print(f"Could not process image {url}: {err}")
         return None
-
-# Route to view logs
+def preset_fetch_properties():
+    global properties_cache
+    print("Pre-caching properties and images...")
+    base = "https://7pdnexz05a.execute-api.us-east-1.amazonaws.com/test"
+    try:
+        resp = requests.get(f"{base}/propertiesforrent", timeout=20)
+        resp.raise_for_status()
+        uuids = resp.json().get("property_ids", [])
+    except Exception:
+        uuids = []
+    newprops = []
+    for uuid in uuids:
+        try:
+            d = requests.get(f"{base}/properties/{uuid}/details", timeout=10).json()
+            d["photos"] = []
+            photo_urls = []
+            try:
+                photo_urls = requests.get(f"{base}/properties/{uuid}/photos", timeout=10).json()
+            except Exception:
+                pass
+            for photourl in photo_urls:
+                b64img = get_base64_image_from_url(photourl)
+                if b64img:
+                    d["photos"].append(b64img)
+            d["id"] = uuid
+            d.setdefault("included_amenities", d.get("included_utilities", []))
+            d.setdefault("bedrooms", "N/A")
+            d.setdefault("bathrooms", "N/A")
+            d.setdefault("rent", "N/A")
+            d.setdefault("sqft", "N/A")
+            d.setdefault("deposit", "N/A")
+            d.setdefault("address", "N/A")
+            d.setdefault("blurb", d.get("description", ""))
+            newprops.append(d)
+        except Exception as e:
+            print(f"Property fetch for {uuid} failed: {e}")
+    properties_cache = newprops
+    print(f"Cached {len(properties_cache)} properties and their images.")
+SHELL = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>{{ title or 'Somewheria, LLC.' }}</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?display=swap&family=Noto+Sans:wght@400;500;700;900&family=Plus+Jakarta+Sans:wght@400;500;700;800"/>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <style>
+    .avatar-uploader input[type=file]{display:none;}
+    .avatar-image:hover{outline:2px solid #3b82f6;cursor:pointer;}
+  </style>
+</head>
+<body style='font-family:"Plus Jakarta Sans","Noto Sans",sans-serif;'>
+<div class="relative flex min-h-screen flex-col bg-white group/design-root overflow-x-hidden">
+  <div class="layout-container flex h-full grow flex-col">
+    <header class="flex items-center justify-between border-b px-10 py-3 border-b-[#f0f2f5]">
+      <div class="flex items-center gap-4 text-[#111518]">
+        <div class="size-4">
+          <svg viewBox="0 0 48 48" fill="none"><g clip-path="url(#clip0_6_535)">
+          <path fill-rule="evenodd" clip-rule="evenodd"
+            d="M47.2426 24L24 47.2426L0.757355 24L24 0.757355L47.2426 24ZM12.2426 21H35.7574L24 9.24264L12.2426 21Z"
+            fill="currentColor"></path></g>
+            <defs><clipPath id="clip0_6_535"><rect width="48" height="48" fill="white"/></clipPath></defs>
+          </svg>
+        </div>
+        <h2 class="text-[#111518] text-lg font-bold leading-tight tracking-[-0.015em]">Somewheria, LLC.</h2>
+      </div>
+      <nav>
+        <ul class="flex items-center gap-9">
+          <li><a href="{{ url_for('home') }}" class="text-[#111518] text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] hover:rounded hover:text-blue-600 px-3 py-2">Home</a></li>
+          <li><a href="{{ url_for('for_rent') }}" class="text-[#111518] text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] hover:rounded hover:text-blue-600 px-3 py-2">For Rent</a></li>
+          <li><a href="{{ url_for('about') }}" class="text-[#111518] text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] hover:rounded hover:text-blue-600 px-3 py-2">About Us</a></li>
+          <li><a href="{{ url_for('contact') }}" class="text-[#111518] text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] hover:rounded hover:text-blue-600 px-3 py-2">Contact Us</a></li>
+        </ul>
+      </nav>
+      <div class="flex flex-1 justify-end">
+        <form class="avatar-uploader relative" id="avatarForm" enctype="multipart/form-data">
+          <label for="avatarInput" title="Click to change avatar image">
+            <img id="avatarImage" class="avatar-image rounded-full size-10 bg-gray-200 object-cover cursor-pointer"
+                 src="https://lh3.googleusercontent.com/aida-public/AB6AXuCkc_hSmV7ymGR-dwspFvxTjZ7JeLmoMpzkXMgVZ9Ji2MtSvJUBDXeGcWc9fmRXGIUC8uMyfTU6zhc53SW5pI4StQyKfkQq_woRLWxYcx_YVJ1l7IXZB6SV6wQSxCZZetUYw_R-8J4NJVWcDRlvBVt5jWYf7QO6VViYVVNUPPBJh_9-yvOYEH_3ScP_-9qvQiXP7A7tkRVD9IBu1HUpNPLdTbIBP5SqAykshMJCW0ed6LHqFk3fueTpIfnB0_V-4msL3XhKtiq1Bxo"
+                 alt="Profile avatar" />
+            <input type="file" accept="image/*" id="avatarInput" name="file">
+            <span class="absolute -right-1 bottom-0 bg-blue-500 text-white rounded-full p-1 text-xs shadow ring-2 ring-white">✎</span>
+          </label>
+        </form>
+      </div>
+    </header>
+    <main>{% block content %}{% endblock %}</main>
+   <footer class="py-5 text-center bg-gray-100">
+  <p class="text-gray-600 mb-2">&copy; 2024/25 Somewheria, LLC. All Rights Reserved.</p>
+  <div>
+    <form action="/report-issue" method="post" class="max-w-md mx-auto">
+      <input type="text" name="name" placeholder="Your Name" required class="w-full p-2 mb-3 border rounded">
+      <textarea name="description" rows="3" placeholder="Issue, request, or question..." required class="w-full p-2 mb-3 border rounded"></textarea>
+      <button type="submit" class="bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 w-full">Submit request via email</button>
+    </form>
+  </div>
+</footer>
+</div>
+<script>
+  document.addEventListener("DOMContentLoaded",function(){
+    let avatarInput = document.getElementById('avatarInput');
+    let avatarImage = document.getElementById('avatarImage');
+    if (!avatarInput || !avatarImage) return;
+    avatarInput.addEventListener('change', function(e){
+      if (!e.target.files || !e.target.files[0]) return;
+      let reader = new FileReader();
+      reader.onload = function(ev){
+        avatarImage.src = ev.target.result;
+        localStorage.setItem('avatar_url', ev.target.result);
+      };
+      reader.readAsDataURL(e.target.files[0]);
+    });
+    let storedAvatar = localStorage.getItem('avatar_url');
+    if(storedAvatar) avatarImage.src = storedAvatar;
+  });
+</script>
+</body>
+</html>
+'''
+import datetime
+property_appointments = load_appointments()
+@app.route('/')
+def home():
+    return render_template_string(SHELL.replace(
+        "{% block content %}{% endblock %}",
+        """
+        {% block content %}
+        <div class="px-40 py-12 max-w-2xl mx-auto">
+            <h1 class="text-3xl font-bold mb-4">Welcome to Somewheria, LLC.</h1>
+            <p class="mb-6">Find your next rental in urban style and comfort.</p>
+            <a class="bg-blue-600 hover:bg-blue-800 text-white px-6 py-3 rounded" href="{{ url_for('for_rent') }}">
+                View Properties
+            </a>
+        </div>
+        {% endblock %}
+        """
+    ), title="Home")
+@app.route("/for-rent")
+def for_rent():
+    properties = properties_cache
+    rent_html = """
+    {% block content %}
+    <div class="px-40 py-12">
+        <h2 class="text-2xl font-bold mb-8">Available Properties</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        {% for prop in properties %}
+            <div class="rounded shadow p-4 bg-white">
+                <a href="{{ url_for('property_details', uuid=prop.id) }}">
+                    <img src="{{ prop.photos[0] if prop.photos else '' }}" alt="Property Image" class="rounded mb-3 w-full h-48 object-cover" />
+                    <div class="font-bold text-lg">{{ prop.name }}</div>
+                    <div class="text-gray-600">{{ prop.address }}</div>
+                    <div class="mt-2 text-blue-800 font-semibold">${{ prop.rent }}/mo</div>
+                </a>
+                <div class="mt-3">
+                    <a href="{{ url_for('property_details', uuid=prop.id) }}"
+                    class="underline text-blue-600">Details</a>
+                </div>
+            </div>
+        {% endfor %}
+        </div>
+    </div>
+    {% endblock %}
+    """
+    return render_template_string(SHELL.replace("{% block content %}{% endblock %}", rent_html),
+            properties=properties, title="For Rent"
+    )
+@app.route("/property/<uuid>")
+def property_details(uuid):
+    property_info = next((p for p in properties_cache if p.get("id") == uuid), None)
+    if not property_info:
+        return "Property not found", 404
+    global property_appointments
+    property_appointments = load_appointments()
+    booked_dates = sorted(list(property_appointments.get(uuid, set())))
+    nowdate = datetime.date.today().strftime("%Y-%m-%d")
+    detail_html = """
+    {% block content %}
+    <div class="px-40 flex flex-col items-center py-7">
+      <div class="max-w-[960px] w-full relative">
+        <div class="bg-white rounded-xl mb-5 relative">
+          <!-- Carousel -->
+          <div class="relative flex justify-center items-center" style="height: 360px; overflow:hidden;">
+            {% set image_count = property.photos | length %}
+            <img 
+              id="carouselImg" 
+              src="{{ property.photos[0] if property.photos else '' }}" 
+              alt="Property Image" 
+              class="rounded object-cover w-full h-80 transition-all duration-300"
+              style="max-height: 340px;"
+            />
+            <button id="carouselPrev" class="absolute left-1 top-1/2 -translate-y-1/2 px-2 py-2 rounded-full bg-white/70 hover:bg-blue-100" style="z-index:15;">
+              &#8249;
+            </button>
+            <button id="carouselNext" class="absolute right-1 top-1/2 -translate-y-1/2 px-2 py-2 rounded-full bg-white/70 hover:bg-blue-100" style="z-index:15;">
+              &#8250;
+            </button>
+            <div class="absolute bottom-2 right-5 flex gap-1">
+              {% for idx in range(image_count) %}
+                <span class="block w-2 h-2 rounded-full {% if idx==0 %}bg-blue-500{% else %}bg-gray-300{% endif %} carousel-dot" data-idx="{{ idx }}"></span>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        <!-- Main content -->
+        <h1 class="text-[#111518] text-[22px] font-bold tracking-tight px-4 pb-3 pt-5">{{ property.name }}</h1>
+        <p class="text-[#111518] text-base pb-3 pt-1 px-4">{{ property.blurb }}</p>
+        <h2 class="text-[#111518] text-[22px] font-bold px-4 pb-3 pt-5">Property Details</h2>
+        <div class="p-4 grid grid-cols-2">
+          <div class="flex flex-col gap-1 border-t py-4 pr-2"><p class="text-[#60768a] text-sm">Address</p><p class="text-[#111518] text-sm">{{ property.address }}</p></div>
+          <div class="flex flex-col gap-1 border-t py-4 pl-2"><p class="text-[#60768a] text-sm">Rent</p><p class="text-[#111518] text-sm">${{ property.rent }}/month</p></div>
+          <div class="flex flex-col gap-1 border-t py-4 pr-2"><p class="text-[#60768a] text-sm">Deposit</p><p class="text-[#111518] text-sm">${{ property.deposit }}</p></div>
+          <div class="flex flex-col gap-1 border-t py-4 pl-2"><p class="text-[#60768a] text-sm">Square Footage</p><p class="text-[#111518] text-sm">{{ property.sqft }} sq ft</p></div>
+          <div class="flex flex-col gap-1 border-t py-4 pr-2"><p class="text-[#60768a] text-sm">Bedrooms</p><p class="text-[#111518] text-sm">{{ property.bedrooms }}</p></div>
+          <div class="flex flex-col gap-1 border-t py-4 pl-2"><p class="text-[#60768a] text-sm">Bathrooms</p><p class="text-[#111518] text-sm">{{ property.bathrooms }}</p></div>
+          <div class="flex flex-col gap-1 border-t py-4 pr-2"><p class="text-[#60768a] text-sm">Lease Term</p><p class="text-[#111518] text-sm">12 months</p></div>
+          <div class="flex flex-col gap-1 border-t py-4 pl-2"><p class="text-[#60768a] text-sm">Amenities</p><p class="text-[#111518] text-sm">{{ property.included_amenities|join(', ') }}</p></div>
+        </div>
+        <h2 class="text-[#111518] text-[22px] font-bold px-4 pb-3 pt-5">Description</h2>
+        <p class="text-[#111518] text-base pb-3 pt-1 px-4">{{ property.description or property.blurb }}</p>
+        <!-- Schedule Appointment Button -->
+        <div class="px-4 pt-6 flex justify-end">
+          <button id="openCalModal" class="bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 font-bold shadow">
+            Schedule Appointment
+          </button>
+        </div>
+        <!-- Calendar Modal -->
+        <div id="calModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 hidden">
+          <div class="bg-white rounded p-6 w-full max-w-[370px] shadow">
+            <div class="flex justify-between items-center mb-5">
+              <div class="text-lg font-bold">Schedule an Appointment</div>
+              <button onclick="closeCalModal()" class="bg-gray-200 rounded px-2 py-1 text-lg leading-none">&times;</button>
+            </div>
+            <form id="apptForm">
+              <label for="apptName" class="font-semibold text-sm">Your Name:</label>
+              <input id="apptName" type="text" required class="w-full border rounded mb-3 p-2"/>
+              <label class="font-semibold text-sm block mb-2">Choose Date:</label>
+              <input id="apptDate" name="date" type="date" min="{{ nowdate }}" required class="mb-3 border rounded p-2 w-full"/>
+              <div id="apptDateFeedback" class="text-red-600 text-xs mb-2"></div>
+              <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 w-full">Request Booking</button>
+              <div id="apptSubmitFeedback" class="text-green-700 text-xs mt-2"></div>
+            </form>
+            <div class="mt-4">
+              <div class="text-xs font-semibold">Unavailable Dates:</div>
+              <ul class="flex flex-wrap gap-1 text-xs text-gray-500 mt-1" id="bookedList"></ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+    // Carousel
+    document.addEventListener("DOMContentLoaded", function() {
+      let images = {{ property.photos | tojson }};
+      let idx = 0;
+      let imgTag = document.getElementById('carouselImg');
+      let dots = document.querySelectorAll('.carousel-dot');
+      function updateCarousel(index) {
+        idx = index;
+        imgTag.src = images[idx];
+        dots.forEach((d,i) => d.className = 'block w-2 h-2 rounded-full carousel-dot ' + (i === idx ? 'bg-blue-500' : 'bg-gray-300'));
+      }
+      document.getElementById('carouselPrev').onclick = function() {
+        idx = (idx - 1 + images.length) % images.length;
+        updateCarousel(idx);
+      };
+      document.getElementById('carouselNext').onclick = function() {
+        idx = (idx + 1) % images.length;
+        updateCarousel(idx);
+      };
+      dots.forEach((dot, i) => dot.onclick = () => updateCarousel(i));
+      updateCarousel(0);
+      // Modal calendar logic
+      let modal = document.getElementById('calModal');
+      let openBtn = document.getElementById('openCalModal');
+      let closeCalModal = window.closeCalModal = () => modal.classList.add("hidden");
+      openBtn.onclick = function() {
+        modal.classList.remove("hidden");
+        document.getElementById('apptSubmitFeedback').innerHTML = '';
+      };
+      // Booked dates
+      let booked = {{ booked_dates | tojson }};
+      let minDate = "{{ nowdate }}";
+      let apptDate = document.getElementById('apptDate');
+      let bookedList = document.getElementById('bookedList');
+      bookedList.innerHTML = booked.map(d => `<li class="px-2 py-0.5 border rounded">${d}</li>`).join('');
+      // Disable selecting a booked date
+      apptDate.oninput = function() {
+        if (booked.includes(this.value)) {
+          document.getElementById('apptDateFeedback').textContent = "This date is already booked. Please select another date.";
+        } else {
+          document.getElementById('apptDateFeedback').textContent = "";
+        }
+      };
+      // Form handler
+      document.getElementById('apptForm').onsubmit = async function(ev){
+        ev.preventDefault();
+        let name = document.getElementById('apptName').value.trim();
+        let date = document.getElementById('apptDate').value;
+        let feedbackBox = document.getElementById('apptDateFeedback');
+        if (!name || !date) return;
+        if (booked.includes(date)) {
+          feedbackBox.textContent = "This date is already booked. Please select another date.";
+          return;
+        }
+        feedbackBox.textContent = '';
+        let resp = await fetch('{{ url_for("schedule_appointment", uuid=property.id) }}', {
+            method: "POST", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({name:name, date:date})
+        });
+        let data = await resp.json();
+        if (data.success){
+          booked.push(date);
+          bookedList.innerHTML = booked.map(d => `<li class="px-2 py-0.5 border rounded">${d}</li>`).join('');
+          document.getElementById('apptSubmitFeedback').innerHTML = "Your appointment was requested!";
+          document.getElementById('apptForm').reset();
+        } else {
+          feedbackBox.textContent = data.error || "Failed to schedule.";
+        }
+      }
+    });
+    </script>
+    {% endblock %}
+    """
+    return render_template_string(
+        SHELL.replace("{% block content %}{% endblock %}", detail_html),
+        property=property_info,
+        nowdate=nowdate,
+        booked_dates=booked_dates,
+        title=property_info.get("name", "Property"),
+    )
+@app.route("/property/<uuid>/schedule", methods=["POST"])
+def schedule_appointment(uuid):
+    data = request.get_json(force=True)
+    name = (data.get("name") or "").strip()
+    date = (data.get("date") or "").strip()
+    tstr = time.strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        dt = datetime.date.fromisoformat(date)
+    except Exception:
+        return jsonify(success=False, error="Invalid date."), 400
+    if dt < datetime.date.today():
+        return jsonify(success=False, error="Date cannot be in the past."), 400
+    found = any(p.get("id") == uuid for p in properties_cache)
+    if not found:
+        return jsonify(success=False, error="Property not found."), 404
+    global property_appointments
+    property_appointments = load_appointments()
+    booked = property_appointments.setdefault(uuid, set())
+    if date in booked:
+        return jsonify(success=False, error="That date is already booked for viewings."), 400
+    booked.add(date)
+    save_appointments(property_appointments)
+    prop = next((p for p in properties_cache if p.get("id") == uuid), None)
+    property_name = prop.get("name", "(Unknown Property)") if prop else "(Unknown Property)"
+    append_appointment_submission(property_name, name, date, tstr)
+    email_message = (
+        f"Appointment requested!\n\n"
+        f"Property: {property_name}\n"
+        f"Requested by: {name}\n"
+        f"For date: {date}\n"
+        f"Requested at: {tstr}"
+    )
+    send_email("Viewing Appointment Request", email_message)
+    return jsonify(success=True)
+@app.route("/about")
+def about():
+    about_html = """
+    {% block content %}
+    <div class="px-40 py-12 max-w-2xl mx-auto">
+        <h2 class="text-2xl font-bold mb-4">About Somewheria, LLC.</h2>
+        <p>Email: <a href="mailto:angela@somewheria.com" class="underline text-blue-600">angela@somewheria.com</a></p>
+        <p class="mt-1">Contact Person: Angela </p><p>Phone: (570) 236-9960</p>
+        <p class="mt-5">We are a next-generation rental marketplace, matching you to your ideal urban home seamlessly!</p>
+    </div>
+    {% endblock %}
+    """
+    return render_template_string(SHELL.replace("{% block content %}{% endblock %}", about_html), title="About")
+@app.route("/contact")
+def contact():
+    contact_html = """
+    {% block content %}
+    <div class="px-40 py-12 max-w-2xl mx-auto">
+        <h2 class="text-2xl font-bold mb-4">Contact Us</h2>
+        <form action="mailto:contact@somewheria.com" method="POST" enctype="text/plain" class="mt-4 max-w-md">
+            <input type="text" placeholder="Your Name" required class="w-full p-2 mb-3 border rounded">
+            <input type="email" placeholder="Your Email" required class="w-full p-2 mb-3 border rounded">
+            <textarea placeholder="Your Message" rows="5" required class="w-full p-2 mb-3 border rounded"></textarea>
+            <input type="submit" value="Send Message" class="mt-2 bg-blue-500 text-white px-4 py-2 rounded cursor-pointer hover:bg-blue-600">
+        </form>
+    </div>
+    {% endblock %}
+    """
+    return render_template_string(SHELL.replace("{% block content %}{% endblock %}", contact_html), title="Contact")
 @app.route("/logs")
 def view_logs():
     if os.path.exists(LOG_FILE):
@@ -171,510 +539,30 @@ def view_logs():
         return f"<pre>{log_content}</pre>"
     else:
         return "No logs available."
-
-# Function to handle issue reports
 @app.route("/report-issue", methods=["POST"])
 def report_issue():
     user_name = request.form.get("name")
     issue_description = request.form.get("description")
     if not user_name or not issue_description:
         return "Name and description are required fields.", 400
-        
     email_body = f"Issue reported by {user_name}:\n\n{issue_description}"
     send_email("User Reported Issue", email_body)
-    return "Issue reported successfully!"
-
-# HTML Base Template
-base_html = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Somewheria LLC</title>
-    <link href="https://unpkg.com/cropperjs/dist/cropper.min.css" rel="stylesheet" />
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #ffffff;
-            color: #000000;
-            display: flex;
-            flex-direction: column;
-            min-height: 100vh;
-        }
-        header {
-            background-color: #007BFF;
-            color: white;
-            text-align: center;
-            padding: 15px 0;
-        }
-        nav ul {
-            list-style-type: none;
-            margin: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding-left: 0;
-        }
-        nav ul li {
-            margin: 0 10px;
-            position: relative;
-        }
-        nav ul li a {
-            color: white;
-            text-decoration: none;
-            padding: 8px 16px;
-            font-weight: bold;
-            display: block;
-            transition: transform 0.3s, box-shadow 0.3s, background-color 0.3s;
-        }
-        nav ul li a:hover {
-            background-color: #0056b3;
-            transform: scale(1.2) rotate(5deg);
-            box-shadow: 0 0 20px rgba(0, 91, 187, 0.5), 0 0 10px rgba(0, 91, 187, 0.2) inset;
-            border-radius: 5px;
-        }
-        nav ul li img {
-            height: 40px;
-            cursor: pointer;
-        }
-        main {
-            flex: 1;
-            margin: 20px auto;
-            max-width: 900px;
-        }
-        .home-section img {
-            width: 100%; 
-            max-width: 500px; 
-            height: auto;
-        }
-        .property-images img, .carousel-images img {
-            width: 200px;
-            height: 120px;
-            object-fit: cover;
-            margin: 5px 0;
-            cursor: pointer;
-            transition: transform 0.3s;
-        }
-        .property-images img:hover, .carousel-images img:hover {
-            transform: scale(1.05);
-        }
-        .feedback-form {
-            margin: 20px 0;
-            border: 1px solid #ccc;
-            padding: 10px;
-            border-radius: 5px;
-            background-color: #f8f8f8;
-        }
-        footer {
-            border-top: 1px solid #ccc;
-            text-align: center;
-            padding: 10px 0;
-            background-color: #f8f8f8;
-        }
-    </style>
-</head>
-<body>
-    <header>
-        <h1>Somewheria LLC</h1>
-        <nav>
-            <ul>
-                <li><a href="/">Home</a></li>
-                <li><a href="/for-rent">For Rent</a></li>
-                <li><a href="/about">About Us</a></li>
-                <li><a href="/contact">Contact Us</a></li>
-                <li>
-                    <img src="{{ url_for('static', filename='web_light_rd_SI@1x.png') }}" alt="Google Sign-In">
-                </li>
-            </ul>
-        </nav>
-    </header>
-    <main>
-        {% block content %}{% endblock %}
-        <div class="feedback-form">
-            <h3>Report an Issue</h3>
-            <form action="/report-issue" method="post">
-                <label for="name">Your Name:</label><br>
-                <input type="text" id="name" name="name" required><br><br>
-                <label for="description">Issue Description:</label><br>
-                <textarea id="description" name="description" rows="5" placeholder="Describe the issue..." required></textarea>
-                <br>
-                <input type="submit" value="Submit Issue">
-            </form>
+    return render_template_string(SHELL.replace(
+        "{% block content %}{% endblock %}",
+        """
+        {% block content %}
+        <div class="px-40 py-12 max-w-2xl mx-auto">
+            <div class="bg-green-100 text-green-800 font-bold px-6 py-5 rounded mb-8">
+                Thank you {{ name }}, your report has been submitted!
+            </div>
+            <div class="text-gray-800">
+                <div><strong>Submitted Description:</strong></div>
+                <div class="bg-gray-50 border px-4 py-2 rounded mt-2 mb-4">{{ desc }}</div>
+            </div>
+            <a class="text-blue-600 underline" href="{{ url_for('home') }}">Back to home</a>
         </div>
-    </main>
-    <footer>
-        <p>&copy; 2025 Somewheria LLC. All Rights Reserved.</p>
-    </footer>
-    <script src="https://unpkg.com/cropperjs/dist/cropper.min.js"></script>
-    <script>
-        let cropper;
-        let selectedImageElement = null;
-
-        function toggleEditable(element) {
-            element.contentEditable = element.contentEditable === "true" ? "false" : "true";
-            const editBtn = element.querySelector('.edit-button');
-            const saveBtn = element.querySelector('.save-button');
-            if (element.contentEditable === "true") {
-                editBtn.style.display = "none";
-                saveBtn.style.display = "inline-block";
-                element.focus();
-            } else {
-                editBtn.style.display = "inline-block";
-                saveBtn.style.display = "none";
-                notifyImageEdit([element.src]);
-            }
-        }
-
-        function notifyImageEdit(imageUrls) {
-            fetch("/image-edit-notify", {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ images: imageUrls })
-            }).then((res) => res.json()).then((data) => {
-                console.log(data.message);
-            });
-        }
-
-        function saveChanges(element, id = null) {
-            element.contentEditable = "false";
-            const editBtn = element.querySelector('.edit-button');
-            const saveBtn = element.querySelector('.save-button');
-            editBtn.style.display = "inline-block";
-            saveBtn.style.display = "none";
-            const content = element.innerHTML;
-            if (id) {
-                fetch(`/save-edit/${id}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ content })
-                })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.success) {
-                        alert('Changes saved successfully!');
-                    } else {
-                        alert('Failed to save changes.');
-                    }
-                })
-                .catch(err => alert('Error saving content: ' + err));
-            }
-        }
-
-        function setupCarousels() {
-            document.querySelectorAll('.image-carousel').forEach(carousel => {
-                let currentIndex = 0;
-                const images = carousel.querySelectorAll('.carousel-images img');
-                const totalImages = images.length;
-                const leftArrow = carousel.querySelector('.carousel-arrow.left');
-                const rightArrow = carousel.querySelector('.carousel-arrow.right');
-                
-                function updateCarousel() {
-                    images.forEach((img, idx) => {
-                        img.style.display = (idx === currentIndex) ? 'block' : 'none';
-                    });
-                }
-                
-                if (totalImages > 0) {
-                    updateCarousel();
-                    leftArrow.addEventListener('click', () => {
-                        currentIndex = (currentIndex === 0) ? totalImages - 1 : currentIndex - 1;
-                        updateCarousel();
-                    });
-                    rightArrow.addEventListener('click', () => {
-                        currentIndex = (currentIndex === totalImages - 1) ? 0 : currentIndex + 1;
-                        updateCarousel();
-                    });
-                }
-            });
-        }
-
-        function editImage(imageEl) {
-            selectedImageElement = imageEl;
-            const modal = document.createElement('div');
-            modal.style.position = 'fixed';
-            modal.style.top = 0; 
-            modal.style.left = 0;
-            modal.style.right = 0; 
-            modal.style.bottom = 0;
-            modal.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-            modal.style.display = 'flex';
-            modal.style.justifyContent = 'center';
-            modal.style.alignItems = 'center';
-            modal.style.zIndex = 99999;
-            const container = document.createElement('div');
-            container.style.backgroundColor = '#fff';
-            container.style.padding = '20px';
-            container.style.position = 'relative';
-            const cropImg = document.createElement('img');
-            cropImg.src = imageEl.src;
-            cropImg.id = "cropper-img";
-            const saveBtn = document.createElement('button');
-            saveBtn.innerText = 'Save';
-            saveBtn.style.marginTop = '10px';
-            saveBtn.onclick = () => {
-                if (cropper) {
-                    const canvas = cropper.getCroppedCanvas();
-                    if (canvas) {
-                        imageEl.src = canvas.toDataURL("image/jpeg");
-                        notifyImageEdit([imageEl.src]);
-                    }
-                }
-                document.body.removeChild(modal);
-            };
-            const cancelBtn = document.createElement('button');
-            cancelBtn.innerText = 'Cancel';
-            cancelBtn.style.marginTop = '10px';
-            cancelBtn.style.marginLeft = '10px';
-            cancelBtn.onclick = () => {
-                document.body.removeChild(modal);
-            };
-            container.appendChild(cropImg);
-            container.appendChild(document.createElement('br'));
-            container.appendChild(saveBtn);
-            container.appendChild(cancelBtn);
-            modal.appendChild(container);
-            document.body.appendChild(modal);
-            cropper = new Cropper(cropImg, {
-                aspectRatio: 16 / 9,
-                viewMode: 1
-            });
-        }
-
-        function addNewImage(uuid) {
-            document.getElementById('add-image-input').click();
-        }
-
-        async function handleFileChange(e, uuid) {
-            const file = e.target.files[0];
-            if (!file) return;
-            const formData = new FormData();
-            formData.append('file', file);
-            try {
-                const res = await fetch(`/upload-image/${uuid}`, {
-                    method: 'POST',
-                    body: formData
-                });
-                const data = await res.json();
-                if (data.success) {
-                    const imgContainer = document.getElementById('image-container');
-                    if (imgContainer) {
-                        const newImg = document.createElement('img');
-                        newImg.src = data.new_image_url;
-                        newImg.alt = 'Uploaded Image';
-                        newImg.onclick = () => editImage(newImg);
-                        imgContainer.appendChild(newImg);
-                    }
-                } else {
-                    console.error(data.message || "Error uploading image.");
-                }
-            } catch (err) {
-                console.error("Upload failed: ", err);
-            }
-        }
-
-        function openGoogleMaps(address) {
-            const encodedAddress = encodeURIComponent(address);
-            const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`;
-            window.open(googleMapsUrl, '_blank');
-        }
-
-        document.addEventListener('DOMContentLoaded', () => {
-            setupCarousels();
-            const addImgInput = document.getElementById('add-image-input');
-            if (addImgInput) {
-                addImgInput.addEventListener('change', (evt) => {
-                    const uuid = addImgInput.getAttribute('data-uuid');
-                    handleFileChange(evt, uuid);
-                });
-            }
-        });
-    </script>
-</body>
-</html>
-"""
-
-# Flask Routes
-@app.route("/")
-def landing_page():
-    home_html = """
-    {% block content %}
-    <div class="home-section">
-        <h2>Welcome to Somewheria LLC</h2>
-        <p>Find your ideal rental property today!</p>
-        <img src="{{ url_for('static', filename='rental_image.jpg') }}" alt="Rental Property">
-    </div>
-    {% endblock %}
-    """
-    final_html = base_html.replace("{% block content %}{% endblock %}", home_html)
-    return render_template_string(final_html)
-
-@app.route("/for-rent")
-def for_rent():
-    properties = properties_cache
-    no_properties = not properties or len(properties) == 0
-    error_message = "We're currently experiencing issues with our system. Please check back later." if no_properties else None
-    rent_html = """
-    {% block content %}
-    <h2>Available Properties</h2>
-    {% if properties %}
-        <ul class="property-list">
-            {% for property in properties %}
-            <li>
-                <div class="image-carousel">
-                    <button class="carousel-arrow left" contenteditable="false"><</button>
-                    <button class="carousel-arrow right" contenteditable="false">></button>
-                    <div class="carousel-images">
-                        {% for photo in property.photos %}
-                        <img src="{{ photo }}" alt="Property Photo" onclick="editImage(this)">
-                        {% endfor %}
-                    </div>
-                </div>
-                <div class="editable" contenteditable="false" id="property-{{ property.id }}">
-                    <button class="edit-button" contenteditable="false" 
-                            onclick="toggleEditable(this.parentNode)">Edit</button>
-                    <button class="save-button" contenteditable="false" 
-                            onclick="saveChanges(this.parentNode, 'property-{{ property.id }}')">Save</button>
-                    <strong>{{ property.name }}</strong><br>
-                    <em>Bedrooms: {{ property.bedrooms }}</em><br>
-                    <em>Bathrooms: {{ property.bathrooms }}</em><br>
-                    <em>Rental Rate: ${{ property.rent }}</em><br>
-                    <em>Square Footage: {{ property.sqft }} sqft</em><br>
-                    <a href="/property/{{ property.id }}" contenteditable="false">View More Details</a> |
-                    <a href="/property-images/{{ property.id }}" contenteditable="false">Edit Images</a>
-                </div>
-            </li>
-            {% endfor %}
-        </ul>
-    {% else %}
-        <p>{{ error_message }}</p>
-    {% endif %}
-    {% endblock %}
-    """
-    final_html = base_html.replace("{% block content %}{% endblock %}", rent_html)
-    return render_template_string(final_html, properties=properties, error_message=error_message)
-
-@app.route("/property/<uuid>")
-def property_details(uuid):
-    property_info = next((p for p in properties_cache if p and p.get("id") == uuid), None)
-    if not property_info:
-        return "Property not found", 404
-    
-    detail_html = """
-    {% block content %}
-    <h2>{{ property.name }}</h2>
-    <div class="image-carousel">
-        <button class="carousel-arrow left" contenteditable="false"><</button>
-        <button class="carousel-arrow right" contenteditable="false">></button>
-        <div class="carousel-images">
-            {% for photo in property.photos %}
-            <img src="{{ photo }}" alt="Property Photo" onclick="editImage(this)">
-            {% endfor %}
-        </div>
-    </div>
-    <div class="editable" contenteditable="false" id="property-{{ property.id }}">
-        <button class="edit-button" contenteditable="false" 
-                onclick="toggleEditable(this.parentNode)">Edit</button>
-        <button class="save-button" contenteditable="false" 
-                onclick="saveChanges(this.parentNode, 'property-{{ property.id }}')">Save</button>
-        <p><strong>Address:</strong> {{ property.address }}
-        <button onclick="openGoogleMaps('{{ property.address }}')" 
-            style="margin-left: 10px; font-size: 0.9em; contenteditable='false';">View in Google Maps</button>
-        </p>
-        <p><strong>Bedrooms:</strong> {{ property.bedrooms }}</p>
-        <p><strong>Bathrooms:</strong> {{ property.bathrooms }}</p>
-        <p><strong>Square Footage:</strong> {{ property.sqft }} sqft</p>
-        <p><strong>Deposit:</strong> ${{ property.deposit }}</p>
-        <p><strong>Rental Rate:</strong> ${{ property.rent }}</p>
-        <p><strong>Blurb About Property:</strong> {{ property.blurb }}</p>
-        <p><strong>Included Amenities:</strong></p>
-        <ul>
-            {% for amenity in property.included_amenities %}
-            <li>{{ amenity }}</li>
-            {% endfor %}
-        </ul>
-        <p><strong>Pets Allowed:</strong> {{ property.pets_allowed }}</p>
-        <a href="/property-images/{{ property.id }}" contenteditable="false">Edit Images</a>
-    </div>
-    {% endblock %}
-    """
-    final_html = base_html.replace("{% block content %}{% endblock %}", detail_html)
-    return render_template_string(final_html, property=property_info)
-
-@app.route("/property-images/<uuid>")
-def property_images(uuid):
-    property_info = next((p for p in properties_cache if p and p.get("id") == uuid), None)
-    if not property_info:
-        return "No images found", 404
-    
-    property_photos = property_info.get('photos', [])
-    property_name = property_info.get('name', 'Property')
-    
-    images_html = f"""
-    {{% block content %}}
-    <h2>Manage Images for {property_name}</h2>
-    <div id="image-container" class="property-images">
-        {{% for photo in photos %}}
-            <img src="{{{{ photo }}}}" alt="Property Image {{{{ loop.index }}}}" onclick="editImage(this)">
-        {{% endfor %}}
-    </div>
-    <div class="action-buttons">
-        <input 
-            type="file" 
-            id="add-image-input" 
-            style="display:none;" 
-            data-uuid="{{{{ uuid }}}}"
-        >
-        <button 
-            class="edit-button" 
-            data-type="upload" 
-            contenteditable="false"
-            onclick="addNewImage('{{{{ uuid }}}}');"
-        >
-            Add New Image
-        </button>
-    </div>
-    {{% endblock %}}
-    """
-    final_html = base_html.replace("{% block content %}{% endblock %}", images_html)
-    return render_template_string(final_html, uuid=uuid, photos=property_photos, property=property_info)
-
-@app.route("/about")
-def about_us():
-    about_html = """
-    {% block content %}
-    <h2>About Somewheria LLC</h2>
-    <div class="editable" contenteditable="false" id="about">
-        <button class="edit-button" contenteditable="false" onclick="toggleEditable(this.parentNode)">Edit</button>
-        <button class="save-button" contenteditable="false" onclick="saveChanges(this.parentNode, 'about')">Save</button>
-        <p>Email: <a href="mailto:contact@somewheria.com">contact@somewheria.com</a></p>
-        <p>Contact: Angela - Phone number: ###-###-#### (TBD)</p>
-        <p>More about our company will be provided soon. Stay tuned!</p>
-    </div>
-    {% endblock %}
-    """
-    final_html = base_html.replace("{% block content %}{% endblock %}", about_html)
-    return render_template_string(final_html)
-
-@app.route("/contact")
-def contact_us():
-    contact_html = """
-    {% block content %}
-    <h2>Contact Us</h2>
-    <p>If you have any questions, feel free to reach out via the form below.</p>
-    <form action="mailto:contact@somewheria.com" method="POST" enctype="text/plain">
-        <input type="text" placeholder="Your Name" required>
-        <input type="email" placeholder="Your Email" required>
-        <textarea placeholder="Your Message" rows="5" required></textarea>
-        <input type="submit" value="Send Message">
-    </form>
-    {% endblock %}
-    """
-    final_html = base_html.replace("{% block content %}{% endblock %}", contact_html)
-    return render_template_string(final_html)
-
+        {% endblock %}
+        """), name=user_name, desc=issue_description)
 @app.route("/save-edit/<id>", methods=["POST"])
 def save_edit(id):
     try:
@@ -685,7 +573,6 @@ def save_edit(id):
         error_message = f"Error saving edits for {id}: {str(e)}"
         log_and_notify_error("Save Edit Error", error_message)
         return jsonify(success=False, error=str(e)), 500
-
 @app.route("/upload-image/<uuid>", methods=["POST"])
 def upload_image(uuid):
     if "file" not in request.files:
@@ -697,13 +584,10 @@ def upload_image(uuid):
         message = "No selected file"
         log_and_notify_error("Upload Error", message)
         return jsonify(success=False, message=message), 400
-    
     file_ext = os.path.splitext(file.filename)[1]
     new_filename = f"{uuid}_{secrets.token_hex(8)}{file_ext}"
     save_path = os.path.join(UPLOAD_FOLDER, new_filename)
-    
     file.save(save_path)
-    
     try:
         with Image.open(save_path) as im:
             im = ImageOps.exif_transpose(im).convert("RGB")
@@ -712,10 +596,8 @@ def upload_image(uuid):
     except Exception as e:
         error_message = f"Failed to process uploaded image: {e}"
         log_and_notify_error("Image Processing Error", error_message)
-    
     new_image_url = url_for("static", filename=f"uploads/{new_filename}", _external=False)
     return jsonify(success=True, new_image_url=new_image_url)
-
 @app.route("/image-edit-notify", methods=["POST"])
 def image_edit_notify():
     try:
@@ -727,14 +609,9 @@ def image_edit_notify():
         error_message = f"Failed to notify image edit: {str(e)}"
         log_and_notify_error("Image Edit Notification Error", error_message)
         return jsonify(message="Failed to send notification."), 500
-
-# Main Application Start
 if __name__ == "__main__":
-    try:
-        print("Fetching property data before starting the server...")
-        fetch_properties()
-        send_email("Server Started", "The server has started successfully and is running.")
-        app.run(host="0.0.0.0", port=5000)
-    except Exception as e:
-        error_message = f"Server failed to start: {e}"
-        log_and_notify_error("Server Start Failure", error_message)
+    print("Warming property cache and processing images...")
+    print_check_file(PROPERTY_APPTS_FILE, "Appointments file at startup")
+    print_check_file(APPOINTMENT_SUB_FILE, "Submissions file at startup")
+    preset_fetch_properties()
+    app.run("0.0.0.0", port=5000, debug=True)
