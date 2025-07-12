@@ -24,9 +24,6 @@ STATIC_DIR = os.path.join("static")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(STATIC_DIR, exist_ok=True)
 PROPERTY_APPTS_FILE = os.path.join(STATIC_DIR, "property_appointments.txt")
-APPOINTMENT_SUB_FILE = os.path.join(STATIC_DIR, "appointment_submissions.txt")
-properties_cache = []
-photos_cache = {}
 ########### APPOINTMENT PERSISTENCE ###########
 def print_check_file(path, purpose):
     abs_path = os.path.abspath(path)
@@ -59,12 +56,7 @@ def save_appointments(appts):
             out = pid + ":" + ",".join(sorted(date_set))
             print(out, file=f)
     print_check_file(PROPERTY_APPTS_FILE, "Appointments saved")
-def append_appointment_submission(property_id, user_name, date, tstr):
-    abs_path = os.path.abspath(APPOINTMENT_SUB_FILE)
-    print(f"[APPEND] Appending appointment to: {abs_path}")
-    with open(APPOINTMENT_SUB_FILE, "a", encoding='utf-8') as f:
-        print(f"{property_id}\t{user_name}\t{date}\t{tstr}", file=f)
-    print_check_file(APPOINTMENT_SUB_FILE, "Submission written")
+
 ############## EMAIL and LOGGING ##############
 def send_email(subject, body):
     smtp_server = "smtp.gmail.com"
@@ -100,13 +92,16 @@ def before_request():
     g.start_time = time.time()
 @app.after_request
 def after_request(response):
-    if hasattr(g, "start_time"):
-        elapsed_time = time.time() - g.start_time
-        if elapsed_time < 0.1:
-            elapsed_ms = elapsed_time * 1000
-            print(f"Time taken for {request.path}: {elapsed_ms:.2f}ms")
-        else:
-            print(f"Time taken for {request.path}: {elapsed_time:.2f}s")
+    try:
+        if hasattr(g, "start_time"):
+            elapsed_time = time.time() - g.start_time
+            if elapsed_time < 0.1:
+                elapsed_ms = elapsed_time * 1000
+                print(f"Time taken for {request.path}: {elapsed_ms:.2f}ms")
+            else:
+                print(f"Time taken for {request.path}: {elapsed_time:.2f}s")
+    except Exception as e:
+        print(f"[after_request error] {e}")
     return response
 def letterbox_to_16_9(img: Image.Image) -> Image.Image:
     target_ratio = 16 / 9
@@ -138,9 +133,165 @@ def get_base64_image_from_url(url):
     except Exception as err:
         print(f"Could not process image {url}: {err}")
         return None
+SHELL = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>{{ title or 'Somewheria, LLC.' }}</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?display=swap&family=Noto+Sans:wght@400;500;700;900&family=Plus+Jakarta+Sans:wght@400;500;700;800"/>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap");
+    .bar1, .bar2, .bar3 {
+      width: 35px;
+      height: 3px;
+      background-color: #111518;
+      margin: 6px 0;
+      transition: 0.4s;
+    }
+    #hamburger-icon {
+      margin: auto 0;
+      display: none;
+      cursor: pointer;
+    }
+    #hamburger-icon.open .bar1 {
+      -webkit-transform: rotate(-45deg) translate(-6px, 6px);
+      transform: rotate(-45deg) translate(-6px, 6px);
+    }
+    #hamburger-icon.open .bar2 {
+      opacity: 0;
+    }
+    #hamburger-icon.open .bar3 {
+      -webkit-transform: rotate(45deg) translate(-6px, -8px);
+      transform: rotate(45deg) translate(-6px, -8px);
+    }
+    #hamburger-icon .mobile-menu {
+      display: none;
+      position: absolute;
+      top: 50px;
+      left: 0;
+      height: calc(100vh - 50px);
+      width: 100%;
+      background: #fff;
+      color: #111518;
+    }
+    #hamburger-icon.open .mobile-menu {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+    }
+    .mobile-menu li {
+      margin-bottom: 10px;
+    }
+    @media only screen and (max-width: 600px) {
+      header nav.desktop-nav {
+        display: none;
+      }
+      #hamburger-icon {
+        display: block;
+      }
+    }
+    @media only screen and (min-width: 601px) {
+      #hamburger-icon {
+        display: none !important;
+      }
+      nav.desktop-nav {
+        display: block !important;
+      }
+    }
+  </style>
+</head>
+<body style='font-family:"Plus Jakarta Sans","Noto Sans",sans-serif; background-color:#fff; color:#111518;'>
+<div class="relative flex min-h-screen flex-col bg-white group/design-root overflow-x-hidden">
+  <div class="layout-container flex h-full grow flex-col">
+    <header class="flex items-center justify-between border-b px-4 sm:px-6 lg:px-10 py-3 w-full" style="position:relative; background-color:#f0f2f5;">
+      <a id="brand" href="{{ url_for('home') }}" class="flex items-center gap-4 text-[#111518] focus:outline-none focus:ring-2 focus:ring-blue-500 rounded">
+        <div class="size-4">
+          <svg viewBox="0 0 48 48" fill="none"><g clip-path="url(#clip0_6_535)">
+          <path fill-rule="evenodd" clip-rule="evenodd"
+            d="M47.2426 24L24 47.2426L0.757355 24L24 0.757355L47.2426 24ZM12.2426 21H35.7574L24 9.24264L12.2426 21Z"
+            fill="currentColor"></path></g>
+            <defs><clipPath id="clip0_6_535"><rect width="48" height="48" fill="white"/></clipPath></defs>
+          </svg>
+        </div>
+        <h2 class="text-[#111518] text-lg font-bold leading-tight tracking-[-0.015em]">Somewheria, LLC.</h2>
+      </a>
+      <nav class="desktop-nav flex-1 hidden sm:block" aria-label="Main navigation">
+        <ul class="flex items-center gap-6 justify-center w-full">
+          <li><a href="{{ url_for('home') }}" class="text-[#111518] text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] hover:rounded hover:text-blue-600 px-3 py-2">Home</a></li>
+          <li><a href="{{ url_for('for_rent') }}" class="text-[#111518] text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] hover:rounded hover:text-blue-600 px-3 py-2">For Rent</a></li>
+          <li><a href="{{ url_for('about') }}" class="text-[#111518] text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] hover:rounded hover:text-blue-600 px-3 py-2">About Us</a></li>
+          <li><a href="{{ url_for('contact') }}" class="text-[#111518] text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] hover:rounded hover:text-blue-600 px-3 py-2">Contact Us</a></li>
+        </ul>
+      </nav>
+      <div id="hamburger-icon" onclick="toggleMobileMenu(this)" aria-label="Open menu" tabindex="0">
+        <div class="bar1"></div>
+        <div class="bar2"></div>
+        <div class="bar3"></div>
+        <ul class="mobile-menu">
+          <li><a href="{{ url_for('home') }}">Home</a></li>
+          <li><a href="{{ url_for('for_rent') }}">For Rent</a></li>
+          <li><a href="{{ url_for('about') }}">About Us</a></li>
+          <li><a href="{{ url_for('contact') }}">Contact Us</a></li>
+        </ul>
+      </div>
+      <div class="flex flex-1 justify-end"></div>
+    </header>
+    <script>
+      function toggleMobileMenu(menu) {
+        menu.classList.toggle('open');
+      }
+    </script>
+    <main class="flex-1">{% block content %}{% endblock %}</main>
+   <footer class="py-5 text-center bg-gray-100">
+  <p class="text-gray-600 mb-2">&copy; 2024/25 Somewheria, LLC. All Rights Reserved.</p>
+  <div>
+    <form action="/report-issue" method="post" class="max-w-md mx-auto">
+      <input type="text" name="name" placeholder="Your Name" required class="w-full p-2 mb-3 border rounded">
+      <textarea name="description" rows="3" placeholder="Issue, request, or question..." required class="w-full p-2 mb-3 border rounded"></textarea>
+      <button type="submit" class="bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 w-full">Submit request via email</button>
+    </form>
+  </div>
+</footer>
+</div>
+</body>
+</html>
+'''
+import datetime
+property_appointments = load_appointments()
+@app.route('/')
+def home():
+    try:
+        return render_template_string(SHELL.replace(
+            "{% block content %}{% endblock %}",
+            """
+            {% block content %}
+<div class="px-4 sm:px-8 md:px-16 lg:px-24 py-6 sm:py-10 md:py-12 max-w-full sm:max-w-2xl mx-auto">
+                <h1 class="text-3xl font-bold mb-4">Welcome to Somewheria, LLC.</h1>
+                <p class="mb-6">Find your next rental in urban style and comfort.</p>
+                <a class="bg-blue-600 hover:bg-blue-800 text-white px-6 py-3 rounded" href="{{ url_for('for_rent') }}">
+                    View Properties
+                </a>
+            </div>
+            {% endblock %}
+            """
+        ), title="Home")
+    except Exception as e:
+        print(f"[home error] {e}")
+        return "Internal server error", 500
+import concurrent.futures
+import threading
+import time
+
+# --- Caching logic ---
+properties_cache = []
+cache_lock = threading.Lock()
+CACHE_REFRESH_INTERVAL = 600  # seconds (10 minutes)
+
 def preset_fetch_properties():
     global properties_cache
-    print("Pre-caching properties and images...")
     base = "https://7pdnexz05a.execute-api.us-east-1.amazonaws.com/test"
     try:
         resp = requests.get(f"{base}/propertiesforrent", timeout=20)
@@ -148,8 +299,7 @@ def preset_fetch_properties():
         uuids = resp.json().get("property_ids", [])
     except Exception:
         uuids = []
-    newprops = []
-    for uuid in uuids:
+    def fetch_property(uuid):
         try:
             d = requests.get(f"{base}/properties/{uuid}/details", timeout=10).json()
             d["photos"] = []
@@ -162,6 +312,12 @@ def preset_fetch_properties():
                 b64img = get_base64_image_from_url(photourl)
                 if b64img:
                     d["photos"].append(b64img)
+            # Fetch thumbnail from /thumbnail endpoint
+            try:
+                thumbnail_url = requests.get(f"{base}/properties/{uuid}/thumbnail", timeout=10).json()
+            except Exception:
+                thumbnail_url = None
+            d["thumbnail"] = thumbnail_url or (d["photos"][0] if d["photos"] else "")
             d["id"] = uuid
             d.setdefault("included_amenities", d.get("included_utilities", []))
             d.setdefault("bedrooms", "N/A")
@@ -171,122 +327,57 @@ def preset_fetch_properties():
             d.setdefault("deposit", "N/A")
             d.setdefault("address", "N/A")
             d.setdefault("blurb", d.get("description", ""))
-            newprops.append(d)
+            d.setdefault("lease_length", d.get("lease_length", "12 months"))
+            # Pets allowed logic
+            pets_allowed = "Unknown"
+            # Direct field
+            if "pets_allowed" in d:
+                pets_allowed = "Yes" if d["pets_allowed"] else "No"
+            # Check amenities
+            elif "included_amenities" in d and any("pet" in str(a).lower() for a in d["included_amenities"]):
+                pets_allowed = "Yes"
+            # Check description
+            elif "description" in d and "pet" in d["description"].lower():
+                pets_allowed = "Yes"
+            d["pets_allowed"] = pets_allowed
+            return d
         except Exception as e:
             print(f"Property fetch for {uuid} failed: {e}")
-    properties_cache = newprops
-    print(f"Cached {len(properties_cache)} properties and their images.")
-SHELL = '''
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>{{ title or 'Somewheria, LLC.' }}</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?display=swap&family=Noto+Sans:wght@400;500;700;900&family=Plus+Jakarta+Sans:wght@400;500;700;800"/>
-  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-  <style>
-    .avatar-uploader input[type=file]{display:none;}
-    .avatar-image:hover{outline:2px solid #3b82f6;cursor:pointer;}
-  </style>
-</head>
-<body style='font-family:"Plus Jakarta Sans","Noto Sans",sans-serif;'>
-<div class="relative flex min-h-screen flex-col bg-white group/design-root overflow-x-hidden">
-  <div class="layout-container flex h-full grow flex-col">
-    <header class="flex items-center justify-between border-b px-10 py-3 border-b-[#f0f2f5]">
-      <div class="flex items-center gap-4 text-[#111518]">
-        <div class="size-4">
-          <svg viewBox="0 0 48 48" fill="none"><g clip-path="url(#clip0_6_535)">
-          <path fill-rule="evenodd" clip-rule="evenodd"
-            d="M47.2426 24L24 47.2426L0.757355 24L24 0.757355L47.2426 24ZM12.2426 21H35.7574L24 9.24264L12.2426 21Z"
-            fill="currentColor"></path></g>
-            <defs><clipPath id="clip0_6_535"><rect width="48" height="48" fill="white"/></clipPath></defs>
-          </svg>
-        </div>
-        <h2 class="text-[#111518] text-lg font-bold leading-tight tracking-[-0.015em]">Somewheria, LLC.</h2>
-      </div>
-      <nav>
-        <ul class="flex items-center gap-9">
-          <li><a href="{{ url_for('home') }}" class="text-[#111518] text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] hover:rounded hover:text-blue-600 px-3 py-2">Home</a></li>
-          <li><a href="{{ url_for('for_rent') }}" class="text-[#111518] text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] hover:rounded hover:text-blue-600 px-3 py-2">For Rent</a></li>
-          <li><a href="{{ url_for('about') }}" class="text-[#111518] text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] hover:rounded hover:text-blue-600 px-3 py-2">About Us</a></li>
-          <li><a href="{{ url_for('contact') }}" class="text-[#111518] text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] hover:rounded hover:text-blue-600 px-3 py-2">Contact Us</a></li>
-        </ul>
-      </nav>
-      <div class="flex flex-1 justify-end">
-        <form class="avatar-uploader relative" id="avatarForm" enctype="multipart/form-data">
-          <label for="avatarInput" title="Click to change avatar image">
-            <img id="avatarImage" class="avatar-image rounded-full size-10 bg-gray-200 object-cover cursor-pointer"
-                 src="https://lh3.googleusercontent.com/aida-public/AB6AXuCkc_hSmV7ymGR-dwspFvxTjZ7JeLmoMpzkXMgVZ9Ji2MtSvJUBDXeGcWc9fmRXGIUC8uMyfTU6zhc53SW5pI4StQyKfkQq_woRLWxYcx_YVJ1l7IXZB6SV6wQSxCZZetUYw_R-8J4NJVWcDRlvBVt5jWYf7QO6VViYVVNUPPBJh_9-yvOYEH_3ScP_-9qvQiXP7A7tkRVD9IBu1HUpNPLdTbIBP5SqAykshMJCW0ed6LHqFk3fueTpIfnB0_V-4msL3XhKtiq1Bxo"
-                 alt="Profile avatar" />
-            <input type="file" accept="image/*" id="avatarInput" name="file">
-            <span class="absolute -right-1 bottom-0 bg-blue-500 text-white rounded-full p-1 text-xs shadow ring-2 ring-white">✎</span>
-          </label>
-        </form>
-      </div>
-    </header>
-    <main>{% block content %}{% endblock %}</main>
-   <footer class="py-5 text-center bg-gray-100">
-  <p class="text-gray-600 mb-2">&copy; 2024/25 Somewheria, LLC. All Rights Reserved.</p>
-  <div>
-    <form action="/report-issue" method="post" class="max-w-md mx-auto">
-      <input type="text" name="name" placeholder="Your Name" required class="w-full p-2 mb-3 border rounded">
-      <textarea name="description" rows="3" placeholder="Issue, request, or question..." required class="w-full p-2 mb-3 border rounded"></textarea>
-      <button type="submit" class="bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 w-full">Submit request via email</button>
-    </form>
-  </div>
-</footer>
-</div>
-<script>
-  document.addEventListener("DOMContentLoaded",function(){
-    let avatarInput = document.getElementById('avatarInput');
-    let avatarImage = document.getElementById('avatarImage');
-    if (!avatarInput || !avatarImage) return;
-    avatarInput.addEventListener('change', function(e){
-      if (!e.target.files || !e.target.files[0]) return;
-      let reader = new FileReader();
-      reader.onload = function(ev){
-        avatarImage.src = ev.target.result;
-        localStorage.setItem('avatar_url', ev.target.result);
-      };
-      reader.readAsDataURL(e.target.files[0]);
-    });
-    let storedAvatar = localStorage.getItem('avatar_url');
-    if(storedAvatar) avatarImage.src = storedAvatar;
-  });
-</script>
-</body>
-</html>
-'''
-import datetime
-property_appointments = load_appointments()
-@app.route('/')
-def home():
-    return render_template_string(SHELL.replace(
-        "{% block content %}{% endblock %}",
-        """
-        {% block content %}
-        <div class="px-40 py-12 max-w-2xl mx-auto">
-            <h1 class="text-3xl font-bold mb-4">Welcome to Somewheria, LLC.</h1>
-            <p class="mb-6">Find your next rental in urban style and comfort.</p>
-            <a class="bg-blue-600 hover:bg-blue-800 text-white px-6 py-3 rounded" href="{{ url_for('for_rent') }}">
-                View Properties
-            </a>
-        </div>
-        {% endblock %}
-        """
-    ), title="Home")
+            return None
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        results = list(executor.map(fetch_property, uuids))
+        with cache_lock:
+            properties_cache = [p for p in results if p]
+    print(f"[Cache] Refreshed at {time.strftime('%Y-%m-%d %H:%M:%S')}, {len(properties_cache)} properties loaded.")
+
+def periodic_cache_refresh():
+    while True:
+        try:
+            preset_fetch_properties()
+        except Exception as e:
+            print(f"[Cache] Error during refresh: {e}")
+        time.sleep(CACHE_REFRESH_INTERVAL)
+
+# Start periodic cache refresh in background
+threading.Thread(target=periodic_cache_refresh, daemon=True).start()
+
 @app.route("/for-rent")
 def for_rent():
-    properties = properties_cache
+    # Use cache only, never block for refresh
+    with cache_lock:
+        properties = list(properties_cache)
     rent_html = """
     {% block content %}
-    <div class="px-40 py-12">
+<div class="px-4 sm:px-8 md:px-16 lg:px-24 py-6 sm:py-10 md:py-12">
         <h2 class="text-2xl font-bold mb-8">Available Properties</h2>
+        {% if not properties %}
+            <div class="text-center text-gray-500 py-10">Loading properties, please try again in a moment.</div>
+        {% else %}
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {% for prop in properties %}
             <div class="rounded shadow p-4 bg-white">
                 <a href="{{ url_for('property_details', uuid=prop.id) }}">
-                    <img src="{{ prop.photos[0] if prop.photos else '' }}" alt="Property Image" class="rounded mb-3 w-full h-48 object-cover" />
+                    <img src="{{ prop.thumbnail }}" alt="Property Image" class="rounded mb-3 w-full h-48 object-cover" />
                     <div class="font-bold text-lg">{{ prop.name }}</div>
                     <div class="text-gray-600">{{ prop.address }}</div>
                     <div class="mt-2 text-blue-800 font-semibold">${{ prop.rent }}/mo</div>
@@ -298,15 +389,107 @@ def for_rent():
             </div>
         {% endfor %}
         </div>
+        {% endif %}
     </div>
     {% endblock %}
+    <script>
+    // Property change detection logic
+    (function() {
+      const STORAGE_KEY = "property_snapshot";
+      // Helper: deep compare two objects (shallow for arrays of objects)
+      function diffProperties(oldList, newList) {
+        const oldMap = {};
+        oldList.forEach(p => oldMap[p.id] = p);
+        const newMap = {};
+        newList.forEach(p => newMap[p.id] = p);
+        const changes = [];
+        for (const id in newMap) {
+          if (!oldMap[id]) {
+            changes.push({ id, type: "added", new: newMap[id] });
+            continue;
+          }
+          const diffs = [];
+          for (const key of Object.keys(newMap[id])) {
+            if (typeof newMap[id][key] === "object") continue; // skip nested
+            if (oldMap[id][key] !== newMap[id][key]) {
+              diffs.push({
+                field: key,
+                old: oldMap[id][key],
+                new: newMap[id][key]
+              });
+            }
+          }
+          if (diffs.length) {
+            changes.push({ id, type: "changed", diffs });
+          }
+        }
+        for (const id in oldMap) {
+          if (!newMap[id]) {
+            changes.push({ id, type: "removed", old: oldMap[id] });
+          }
+        }
+        return changes;
+      }
+      // Fetch latest properties from API
+      fetch("/for-rent.json")
+        .then(resp => resp.json())
+        .then(newProps => {
+          let oldProps = [];
+          try {
+            oldProps = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+          } catch {}
+          const changes = diffProperties(oldProps, newProps);
+          if (changes.length === 0) {
+            console.log("[Property Check] No changes detected in property data.");
+          } else {
+            console.group("[Property Check] Changes detected in property data:");
+            changes.forEach(change => {
+              if (change.type === "added") {
+                console.log(`+ Property added: ID ${change.id}`, change.new);
+              } else if (change.type === "removed") {
+                console.log(`- Property removed: ID ${change.id}`, change.old);
+              } else if (change.type === "changed") {
+                console.group(`~ Property changed: ID ${change.id}`);
+                console.table(change.diffs.map(d => ({
+                  Field: d.field,
+                  "Old Value": d.old,
+                  "New Value": d.new
+                })));
+                console.groupEnd();
+              }
+            });
+            console.groupEnd();
+          }
+          // Save new snapshot
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(newProps));
+        })
+        .catch(e => {
+          console.warn("[Property Check] Could not fetch property data for change detection.", e);
+        });
+    })();
+    </script>
     """
     return render_template_string(SHELL.replace("{% block content %}{% endblock %}", rent_html),
             properties=properties, title="For Rent"
     )
+
+@app.route("/for-rent.json")
+def for_rent_json():
+    # Use cache only, never block for refresh
+    with cache_lock:
+        properties = list(properties_cache)
+    def make_serializable(prop):
+        out = dict(prop)
+        for k, v in out.items():
+            if isinstance(v, set):
+                out[k] = list(v)
+        return out
+    return jsonify([make_serializable(p) for p in properties])
 @app.route("/property/<uuid>")
 def property_details(uuid):
-    property_info = next((p for p in properties_cache if p.get("id") == uuid), None)
+    # Use cache for property details
+    with cache_lock:
+        property_info = next((p for p in properties_cache if p.get("id") == uuid), None)
     if not property_info:
         return "Property not found", 404
     global property_appointments
@@ -315,7 +498,7 @@ def property_details(uuid):
     nowdate = datetime.date.today().strftime("%Y-%m-%d")
     detail_html = """
     {% block content %}
-    <div class="px-40 flex flex-col items-center py-7">
+<div class="px-4 sm:px-8 md:px-16 lg:px-24 flex flex-col items-center py-7">
       <div class="max-w-[960px] w-full relative">
         <div class="bg-white rounded-xl mb-5 relative">
           <!-- Carousel -->
@@ -323,7 +506,7 @@ def property_details(uuid):
             {% set image_count = property.photos | length %}
             <img 
               id="carouselImg" 
-              src="{{ property.photos[0] if property.photos else '' }}" 
+              src="{{ property.thumbnail }}" 
               alt="Property Image" 
               class="rounded object-cover w-full h-80 transition-all duration-300"
               style="max-height: 340px;"
@@ -352,22 +535,31 @@ def property_details(uuid):
           <div class="flex flex-col gap-1 border-t py-4 pl-2"><p class="text-[#60768a] text-sm">Square Footage</p><p class="text-[#111518] text-sm">{{ property.sqft }} sq ft</p></div>
           <div class="flex flex-col gap-1 border-t py-4 pr-2"><p class="text-[#60768a] text-sm">Bedrooms</p><p class="text-[#111518] text-sm">{{ property.bedrooms }}</p></div>
           <div class="flex flex-col gap-1 border-t py-4 pl-2"><p class="text-[#60768a] text-sm">Bathrooms</p><p class="text-[#111518] text-sm">{{ property.bathrooms }}</p></div>
-          <div class="flex flex-col gap-1 border-t py-4 pr-2"><p class="text-[#60768a] text-sm">Lease Term</p><p class="text-[#111518] text-sm">12 months</p></div>
+          <div class="flex flex-col gap-1 border-t py-4 pr-2"><p class="text-[#60768a] text-sm">Lease Term</p><p class="text-[#111518] text-sm">{{ property.lease_length }}</p></div>
           <div class="flex flex-col gap-1 border-t py-4 pl-2"><p class="text-[#60768a] text-sm">Amenities</p><p class="text-[#111518] text-sm">{{ property.included_amenities|join(', ') }}</p></div>
+          <div class="flex flex-col gap-1 border-t py-4 pr-2"><p class="text-[#60768a] text-sm">Pets Allowed</p>
+            <p class="text-[#111518] text-sm">
+              {% if property.pets_allowed is defined %}
+                {{ property.pets_allowed }}
+              {% else %}
+                Unknown
+              {% endif %}
+            </p>
+          </div>
         </div>
         <h2 class="text-[#111518] text-[22px] font-bold px-4 pb-3 pt-5">Description</h2>
         <p class="text-[#111518] text-base pb-3 pt-1 px-4">{{ property.description or property.blurb }}</p>
-        <!-- Schedule Appointment Button -->
+        <!-- Request Appointment Button -->
         <div class="px-4 pt-6 flex justify-end">
           <button id="openCalModal" class="bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 font-bold shadow">
-            Schedule Appointment
+            Request Appointment
           </button>
         </div>
         <!-- Calendar Modal -->
         <div id="calModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 hidden">
           <div class="bg-white rounded p-6 w-full max-w-[370px] shadow">
             <div class="flex justify-between items-center mb-5">
-              <div class="text-lg font-bold">Schedule an Appointment</div>
+              <div class="text-lg font-bold">Request an Appointment</div>
               <button onclick="closeCalModal()" class="bg-gray-200 rounded px-2 py-1 text-lg leading-none">&times;</button>
             </div>
             <form id="apptForm">
@@ -375,14 +567,19 @@ def property_details(uuid):
               <input id="apptName" type="text" required class="w-full border rounded mb-3 p-2"/>
               <label class="font-semibold text-sm block mb-2">Choose Date:</label>
               <input id="apptDate" name="date" type="date" min="{{ nowdate }}" required class="mb-3 border rounded p-2 w-full"/>
+              <label for="contactMethod" class="font-semibold text-sm block mb-2">Preferred Contact Method:</label>
+              <select id="contactMethod" name="contactMethod" class="w-full border rounded mb-3 p-2">
+                <option value="email">Email</option>
+                <option value="text">Text</option>
+              </select>
+              <div id="contactInfoContainer">
+                <label for="contactInfo" class="font-semibold text-sm block mb-2">Your Email:</label>
+                <input id="contactInfo" type="email" name="contactInfo" required class="w-full border rounded mb-3 p-2"/>
+              </div>
               <div id="apptDateFeedback" class="text-red-600 text-xs mb-2"></div>
               <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 w-full">Request Booking</button>
               <div id="apptSubmitFeedback" class="text-green-700 text-xs mt-2"></div>
             </form>
-            <div class="mt-4">
-              <div class="text-xs font-semibold">Unavailable Dates:</div>
-              <ul class="flex flex-wrap gap-1 text-xs text-gray-500 mt-1" id="bookedList"></ul>
-            </div>
           </div>
         </div>
       </div>
@@ -417,47 +614,143 @@ def property_details(uuid):
         modal.classList.remove("hidden");
         document.getElementById('apptSubmitFeedback').innerHTML = '';
       };
-      // Booked dates
-      let booked = {{ booked_dates | tojson }};
       let minDate = "{{ nowdate }}";
-      let apptDate = document.getElementById('apptDate');
-      let bookedList = document.getElementById('bookedList');
-      bookedList.innerHTML = booked.map(d => `<li class="px-2 py-0.5 border rounded">${d}</li>`).join('');
-      // Disable selecting a booked date
-      apptDate.oninput = function() {
-        if (booked.includes(this.value)) {
-          document.getElementById('apptDateFeedback').textContent = "This date is already booked. Please select another date.";
+      // Contact method logic
+      const contactMethod = document.getElementById('contactMethod');
+      const contactInfoContainer = document.getElementById('contactInfoContainer');
+      const contactInfoInput = document.getElementById('contactInfo');
+      function updateContactInfoField() {
+        if (contactMethod.value === "text") {
+          contactInfoContainer.innerHTML = `<label for="contactInfo" class="font-semibold text-sm block mb-2">Your Phone Number:</label>
+            <input id="contactInfo" type="tel" name="contactInfo" required class="w-full border rounded mb-3 p-2"/>`;
         } else {
-          document.getElementById('apptDateFeedback').textContent = "";
+          contactInfoContainer.innerHTML = `<label for="contactInfo" class="font-semibold text-sm block mb-2">Your Email:</label>
+            <input id="contactInfo" type="email" name="contactInfo" required class="w-full border rounded mb-3 p-2"/>`;
         }
-      };
+      }
+      contactMethod.addEventListener("change", updateContactInfoField);
+      updateContactInfoField();
       // Form handler
       document.getElementById('apptForm').onsubmit = async function(ev){
         ev.preventDefault();
         let name = document.getElementById('apptName').value.trim();
         let date = document.getElementById('apptDate').value;
+        let method = document.getElementById('contactMethod').value;
+        let contactInfo = document.getElementById('contactInfo').value.trim();
         let feedbackBox = document.getElementById('apptDateFeedback');
-        if (!name || !date) return;
-        if (booked.includes(date)) {
-          feedbackBox.textContent = "This date is already booked. Please select another date.";
-          return;
-        }
+        if (!name || !date || !contactInfo) return;
         feedbackBox.textContent = '';
         let resp = await fetch('{{ url_for("schedule_appointment", uuid=property.id) }}', {
             method: "POST", headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({name:name, date:date})
+            body: JSON.stringify({name:name, date:date, contact_method:method, contact_info:contactInfo})
         });
         let data = await resp.json();
         if (data.success){
-          booked.push(date);
-          bookedList.innerHTML = booked.map(d => `<li class="px-2 py-0.5 border rounded">${d}</li>`).join('');
           document.getElementById('apptSubmitFeedback').innerHTML = "Your appointment was requested!";
           document.getElementById('apptForm').reset();
         } else {
-          feedbackBox.textContent = data.error || "Failed to schedule.";
+          feedbackBox.textContent = data.error || "Failed to request.";
         }
       }
     });
+    </script>
+    <script>
+    // Property change detection for details page (with image diff)
+    (function() {
+      const STORAGE_KEY = "property_snapshot";
+      // Helper: find property by id in list
+      function findById(list, id) {
+        return (list || []).find(p => p.id === id);
+      }
+      // Helper: diff two arrays (for images)
+      function diffArrays(oldArr, newArr) {
+        oldArr = oldArr || [];
+        newArr = newArr || [];
+        const added = newArr.filter(x => !oldArr.includes(x));
+        const removed = oldArr.filter(x => !newArr.includes(x));
+        const unchanged = newArr.filter(x => oldArr.includes(x));
+        return { added, removed, unchanged };
+      }
+      // Helper: diff two property objects (fields + images)
+      function diffProperty(oldProp, newProp) {
+        if (!oldProp) return { added: true, new: newProp };
+        const diffs = [];
+        // Shallow fields (non-object, except images)
+        for (const key of Object.keys(newProp)) {
+          if (key === "photos" || key === "thumbnail") continue;
+          if (typeof newProp[key] === "object") continue;
+          if (oldProp[key] !== newProp[key]) {
+            diffs.push({
+              field: key,
+              old: oldProp[key],
+              new: newProp[key]
+            });
+          }
+        }
+        // Thumbnail diff
+        if (oldProp.thumbnail !== newProp.thumbnail) {
+          diffs.push({
+            field: "thumbnail",
+            old: oldProp.thumbnail,
+            new: newProp.thumbnail
+          });
+        }
+        // Photos array diff
+        const photoDiff = diffArrays(oldProp.photos, newProp.photos);
+        if (photoDiff.added.length || photoDiff.removed.length) {
+          diffs.push({
+            field: "photos",
+            added: photoDiff.added,
+            removed: photoDiff.removed
+          });
+        }
+        return diffs.length ? { changed: true, diffs } : null;
+      }
+      // Get current property id and data
+      const propId = "{{ property.id }}";
+      const currentProp = {{ property | tojson }};
+      let oldProps = [];
+      try {
+        oldProps = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+      } catch {}
+      const oldProp = findById(oldProps, propId);
+      const diff = diffProperty(oldProp, currentProp);
+      if (!oldProp) {
+        console.log(`[Property Details] This property was not in the previous snapshot (new or first visit).`);
+      } else if (!diff) {
+        console.log(`[Property Details] No changes detected for this property.`);
+      } else if (diff.changed) {
+        console.group(`[Property Details] Changes detected for property ID ${propId}:`);
+        diff.diffs.forEach(d => {
+          if (d.field === "photos") {
+            if (d.added.length)
+              console.log("Photos added:", d.added);
+            if (d.removed.length)
+              console.log("Photos removed:", d.removed);
+            if (!d.added.length && !d.removed.length)
+              console.log("No changes in photos.");
+          } else if (d.field === "thumbnail") {
+            console.log("Thumbnail changed:", { old: d.old, new: d.new });
+          } else {
+            console.log(`Field changed: ${d.field}`, { old: d.old, new: d.new });
+          }
+        });
+        // Also print a summary table for non-image fields
+        const tableRows = diff.diffs
+          .filter(d => d.field !== "photos" && d.field !== "thumbnail")
+          .map(d => ({
+            Field: d.field,
+            "Old Value": d.old,
+            "New Value": d.new
+          }));
+        if (tableRows.length) {
+          console.table(tableRows);
+        }
+        console.groupEnd();
+      } else if (diff.added) {
+        console.log(`[Property Details] This property was just added.`, diff.new);
+      }
+    })();
     </script>
     {% endblock %}
     """
@@ -473,6 +766,8 @@ def schedule_appointment(uuid):
     data = request.get_json(force=True)
     name = (data.get("name") or "").strip()
     date = (data.get("date") or "").strip()
+    contact_method = (data.get("contact_method") or "").strip()
+    contact_info = (data.get("contact_info") or "").strip()
     tstr = time.strftime("%Y-%m-%d %H:%M:%S")
     try:
         dt = datetime.date.fromisoformat(date)
@@ -480,24 +775,20 @@ def schedule_appointment(uuid):
         return jsonify(success=False, error="Invalid date."), 400
     if dt < datetime.date.today():
         return jsonify(success=False, error="Date cannot be in the past."), 400
-    found = any(p.get("id") == uuid for p in properties_cache)
-    if not found:
+    # Fetch property live to check existence and get name
+    base = "https://7pdnexz05a.execute-api.us-east-1.amazonaws.com/test"
+    try:
+        prop = requests.get(f"{base}/properties/{uuid}/details", timeout=10).json()
+        property_name = prop.get("name", "(Unknown Property)")
+    except Exception:
         return jsonify(success=False, error="Property not found."), 404
-    global property_appointments
-    property_appointments = load_appointments()
-    booked = property_appointments.setdefault(uuid, set())
-    if date in booked:
-        return jsonify(success=False, error="That date is already booked for viewings."), 400
-    booked.add(date)
-    save_appointments(property_appointments)
-    prop = next((p for p in properties_cache if p.get("id") == uuid), None)
-    property_name = prop.get("name", "(Unknown Property)") if prop else "(Unknown Property)"
-    append_appointment_submission(property_name, name, date, tstr)
     email_message = (
         f"Appointment requested!\n\n"
         f"Property: {property_name}\n"
         f"Requested by: {name}\n"
         f"For date: {date}\n"
+        f"Contact method: {contact_method}\n"
+        f"Contact info: {contact_info}\n"
         f"Requested at: {tstr}"
     )
     send_email("Viewing Appointment Request", email_message)
@@ -506,7 +797,7 @@ def schedule_appointment(uuid):
 def about():
     about_html = """
     {% block content %}
-    <div class="px-40 py-12 max-w-2xl mx-auto">
+    <div class="px-4 sm:px-8 md:px-16 lg:px-24 py-6 sm:py-10 md:py-12 max-w-full sm:max-w-2xl mx-auto">
         <h2 class="text-2xl font-bold mb-4">About Somewheria, LLC.</h2>
         <p>Email: <a href="mailto:angela@somewheria.com" class="underline text-blue-600">angela@somewheria.com</a></p>
         <p class="mt-1">Contact Person: Angela </p><p>Phone: (570) 236-9960</p>
@@ -519,7 +810,7 @@ def about():
 def contact():
     contact_html = """
     {% block content %}
-    <div class="px-40 py-12 max-w-2xl mx-auto">
+        <div class="px-4 sm:px-8 md:px-16 lg:px-24 py-6 sm:py-10 md:py-12 max-w-full sm:max-w-2xl mx-auto">
         <h2 class="text-2xl font-bold mb-4">Contact Us</h2>
         <form action="mailto:contact@somewheria.com" method="POST" enctype="text/plain" class="mt-4 max-w-md">
             <input type="text" placeholder="Your Name" required class="w-full p-2 mb-3 border rounded">
@@ -551,7 +842,7 @@ def report_issue():
         "{% block content %}{% endblock %}",
         """
         {% block content %}
-        <div class="px-40 py-12 max-w-2xl mx-auto">
+        <div class="px-4 sm:px-8 md:px-16 lg:px-24 py-6 sm:py-10 md:py-12 max-w-full sm:max-w-2xl mx-auto">
             <div class="bg-green-100 text-green-800 font-bold px-6 py-5 rounded mb-8">
                 Thank you {{ name }}, your report has been submitted!
             </div>
@@ -612,6 +903,4 @@ def image_edit_notify():
 if __name__ == "__main__":
     print("Warming property cache and processing images...")
     print_check_file(PROPERTY_APPTS_FILE, "Appointments file at startup")
-    print_check_file(APPOINTMENT_SUB_FILE, "Submissions file at startup")
-    preset_fetch_properties()
     app.run("0.0.0.0", port=5000, debug=True)
