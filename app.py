@@ -224,11 +224,11 @@ SHELL = '''
     }
   </style>
 </head>
-<body style='font-family:"Plus Jakarta Sans","Noto Sans",sans-serif; background-color:#fff; color:#111518;'>
-<div class="relative flex min-h-screen flex-col bg-white group/design-root overflow-x-hidden">
+<body style='font-family:"Plus Jakarta Sans","Noto Sans",sans-serif;'>
+<div class="relative flex min-h-screen flex-col group/design-root overflow-x-hidden">
   <div class="layout-container flex h-full grow flex-col">
-    <header class="flex items-center justify-between border-b px-4 sm:px-6 lg:px-10 py-3 w-full" style="position:relative; background-color:#f0f2f5;">
-      <a id="brand" href="{{ url_for('home') }}" class="flex items-center gap-4 text-[#111518] focus:outline-none focus:ring-2 focus:ring-blue-500 rounded">
+    <header class="flex items-center justify-between border-b px-4 sm:px-6 lg:px-10 py-3 w-full bg-neutral-100 dark:bg-neutral-900" style="position:relative;">
+      <a id="brand" href="{{ url_for('home') }}" class="flex items-center gap-4 text-[#111518] dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 rounded">
         <div class="size-4">
           <svg viewBox="0 0 48 48" fill="none"><g clip-path="url(#clip0_6_535)">
           <path fill-rule="evenodd" clip-rule="evenodd"
@@ -237,41 +237,57 @@ SHELL = '''
             <defs><clipPath id="clip0_6_535"><rect width="48" height="48" fill="white"/></clipPath></defs>
           </svg>
         </div>
-        <h2 class="text-[#111518] text-lg font-bold leading-tight tracking-[-0.015em]">Somewheria, LLC.</h2>
+        <h2 class="text-[#111518] dark:text-white text-lg font-bold leading-tight tracking-[-0.015em]">Somewheria, LLC.</h2>
       </a>
       <nav class="desktop-nav flex-1 hidden sm:block" aria-label="Main navigation">
         <ul class="flex items-center gap-6 justify-center w-full">
-          <li><a href="{{ url_for('home') }}" class="text-[#111518] text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] hover:rounded hover:text-blue-600 px-3 py-2">Home</a></li>
-          <li><a href="{{ url_for('for_rent') }}" class="text-[#111518] text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] hover:rounded hover:text-blue-600 px-3 py-2">For Rent</a></li>
-          <li><a href="{{ url_for('about') }}" class="text-[#111518] text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] hover:rounded hover:text-blue-600 px-3 py-2">About Us</a></li>
-          <li><a href="{{ url_for('contact') }}" class="text-[#111518] text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] hover:rounded hover:text-blue-600 px-3 py-2">Contact Us</a></li>
+          <li><a href="{{ url_for('home') }}" class="text-[#111518] dark:text-white text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] dark:hover:bg-neutral-800 hover:rounded hover:text-blue-600 px-3 py-2">Home</a></li>
+          <li><a href="{{ url_for('for_rent') }}" class="text-[#111518] dark:text-white text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] dark:hover:bg-neutral-800 hover:rounded hover:text-blue-600 px-3 py-2">For Rent</a></li>
+          <li><a href="{{ url_for('about') }}" class="text-[#111518] dark:text-white text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] dark:hover:bg-neutral-800 hover:rounded hover:text-blue-600 px-3 py-2">About Us</a></li>
+          <li><a href="{{ url_for('contact') }}" class="text-[#111518] dark:text-white text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] dark:hover:bg-neutral-800 hover:rounded hover:text-blue-600 px-3 py-2">Contact Us</a></li>
         </ul>
       </nav>
-      <div id="hamburger-icon" onclick="toggleMobileMenu(this)" aria-label="Open menu" tabindex="0">
-        <div class="bar1"></div>
-        <div class="bar2"></div>
-        <div class="bar3"></div>
-        <ul class="mobile-menu">
-          <li><a href="{{ url_for('home') }}">Home</a></li>
-          <li><a href="{{ url_for('for_rent') }}">For Rent</a></li>
-          <li><a href="{{ url_for('about') }}">About Us</a></li>
-          <li><a href="{{ url_for('contact') }}">Contact Us</a></li>
-        </ul>
+      <div class="flex flex-1 justify-end items-center">
+        <div id="hamburger-icon" onclick="toggleMobileMenu(this)" aria-label="Open menu" tabindex="0" style="margin-left:auto;">
+          <div class="bar1"></div>
+          <div class="bar2"></div>
+          <div class="bar3"></div>
+          <ul class="mobile-menu dark:bg-neutral-900 dark:text-white">
+            <li><a href="{{ url_for('home') }}" class="dark:text-white">Home</a></li>
+            <li><a href="{{ url_for('for_rent') }}" class="dark:text-white">For Rent</a></li>
+            <li><a href="{{ url_for('about') }}" class="dark:text-white">About Us</a></li>
+            <li><a href="{{ url_for('contact') }}" class="dark:text-white">Contact Us</a></li>
+          </ul>
+        </div>
       </div>
-      <div class="flex flex-1 justify-end"></div>
     </header>
     <script>
       function toggleMobileMenu(menu) {
         menu.classList.toggle('open');
       }
     </script>
-    <main class="flex-1">{% block content %}{% endblock %}</main>
-   <footer class="py-5 text-center bg-gray-100">
-  <p class="text-gray-600 mb-2">&copy; 2024/25 Somewheria, LLC. All Rights Reserved.</p>
+    <main class="flex-1 dark:bg-neutral-950 dark:text-white">{% block content %}{% endblock %}</main>
+   <footer class="py-5 text-center bg-gray-100 dark:bg-neutral-900">
+  <p class="text-gray-600 dark:text-gray-300 mb-2">&copy; 2024/25 Somewheria, LLC. All Rights Reserved.</p>
   <div>
-      <a href="{{ url_for('report_issue_complete') }}" class="text-blue-600 underline text-sm">Report an issue</a>
+      <a href="{{ url_for('report_issue_complete') }}" class="text-blue-600 dark:text-blue-400 underline text-sm">Report an issue</a>
   </div>
 </footer>
+<script>
+// Auto-detect system dark mode and apply Tailwind dark class
+if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+  document.documentElement.classList.add('dark');
+} else {
+  document.documentElement.classList.remove('dark');
+}
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+  if (e.matches) {
+    document.documentElement.classList.add('dark');
+  } else {
+    document.documentElement.classList.remove('dark');
+  }
+});
+</script>
 </div>
 </body>
 </html>
@@ -287,7 +303,7 @@ def home():
             {% block content %}
 <div class="px-4 sm:px-8 md:px-16 lg:px-24 py-6 sm:py-10 md:py-12 max-w-full sm:max-w-2xl mx-auto">
                 <h1 class="text-3xl font-bold mb-4">Welcome to Somewheria, LLC.</h1>
-                <p class="mb-6">Find your next rental in urban style and comfort.</p>
+                <p class="mb-6">Find your next rental in style and comfort.</p>
                 <a class="bg-blue-600 hover:bg-blue-800 text-white px-6 py-3 rounded" href="{{ url_for('for_rent') }}">
                     View Properties
                 </a>
@@ -343,7 +359,9 @@ def preset_fetch_properties():
             d.setdefault("sqft", "N/A")
             d.setdefault("deposit", "N/A")
             d.setdefault("address", "N/A")
-            d.setdefault("blurb", d.get("description", ""))
+            # Always set 'description' from API if available
+            d["description"] = d.get("description", "")
+            d.setdefault("blurb", d["description"])
             d.setdefault("lease_length", d.get("lease_length", "12 months"))
             # Pets allowed logic
             pets_allowed = "Unknown"
@@ -818,7 +836,7 @@ def about():
         <h2 class="text-2xl font-bold mb-4">About Somewheria, LLC.</h2>
         <p>Email: <a href="mailto:angela@somewheria.com" class="underline text-blue-600">angela@somewheria.com</a></p>
         <p class="mt-1">Contact Person: Angela </p><p>Phone: (570) 236-9960</p>
-        <p class="mt-5">We are a next-generation rental marketplace, matching you to your ideal urban home seamlessly!</p>
+        <p class="mt-5">We are a next-generation rental company, matching you to your ideal home seamlessly!</p>
     </div>
     {% endblock %}
     """
@@ -1020,6 +1038,4 @@ def image_edit_notify():
 if __name__ == "__main__":
     print("Warming property cache and processing images...")
     print_check_file(PROPERTY_APPTS_FILE, "Appointments file at startup")
-    app.run("0.0.0.0", port=5000, debug=True)
-
-
+    app.run("0.0.0.0", port=80, debug=False)
