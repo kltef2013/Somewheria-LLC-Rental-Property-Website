@@ -16,8 +16,22 @@ app = Flask(__name__)
 def report_issue_complete():
     issue_text_html = """
     {% block content %}
-    <div class='px-4 sm:px-8 md:px-16 lg:px-24 py-10 max-w-full sm:max-w-2xl mx-auto bg-neutral-950 rounded shadow'>
-      <h2 class='text-2xl font-bold mb-6 text-white !text-white text-center drop-shadow-lg'>Report an Issue</h2>
+    <div class='px-4 sm:px-8 md:px-16 lg:px-24 py-10 max-w-full sm:max-w-2xl mx-auto'>
+      <h2 class='text-2xl font-bold mb-6 text-[#111518] dark:text-white text-center drop-shadow-lg'>Report an Issue</h2>
+      <div class="bg-green-100 text-green-800 font-bold px-6 py-5 rounded mb-8 text-center">
+        Thank you for your report!
+      </div>
+      <form action="{{ url_for('report_issue') }}" method="POST" class="bg-white dark:bg-neutral-900 rounded shadow p-6">
+        <div class="mb-4">
+          <label for="name" class="block text-sm font-semibold text-[#111518] dark:text-white mb-2">Your Name</label>
+          <input type="text" id="name" name="name" required class="w-full p-2 border rounded bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800" />
+        </div>
+        <div class="mb-4">
+          <label for="description" class="block text-sm font-semibold text-[#111518] dark:text-white mb-2">Issue Description</label>
+          <textarea id="description" name="description" rows="5" required class="w-full p-2 border rounded bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800"></textarea>
+        </div>
+        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-bold shadow">Submit Issue</button>
+      </form>
     </div>
     {% endblock %}
     """
@@ -157,6 +171,26 @@ SHELL = '''
   <title>{{ title or 'Somewheria, LLC.' }}</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?display=swap&family=Noto+Sans:wght@400;500;700;900&family=Plus+Jakarta+Sans:wght@400;500;700;800"/>
   <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <script>
+    // Auto-detect system dark mode and apply Tailwind dark class ASAP
+    (function() {
+      try {
+        var darkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (darkMode) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+          if (e.matches) {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        });
+      } catch(e) {}
+    })();
+  </script>
   <style>
     @import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap");
     .bar1, .bar2, .bar3 {
@@ -191,15 +225,34 @@ SHELL = '''
       width: 100%;
       background: #fff;
       color: #111518;
+      transition: background 0.3s, color 0.3s;
     }
     #hamburger-icon.open .mobile-menu {
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: flex-start;
+      background: #fff;
+      color: #111518;
     }
     .mobile-menu li {
       margin-bottom: 10px;
+    }
+    .mobile-menu a {
+      transition: color 0.3s, background 0.3s;
+    }
+    @media (prefers-color-scheme: dark) {
+      #hamburger-icon .mobile-menu {
+        background: #18181b !important;
+        color: #fff !important;
+      }
+      #hamburger-icon.open .mobile-menu {
+        background: #18181b !important;
+        color: #fff !important;
+      }
+      .mobile-menu a {
+        color: #fff !important;
+      }
     }
     @media only screen and (max-width: 600px) {
       header nav.desktop-nav {
@@ -217,10 +270,32 @@ SHELL = '''
         display: block !important;
       }
     }
+    /* Form transitions */
+    form input, form textarea, form select {
+      transition: background 0.3s, color 0.3s, border-color 0.3s;
+    }
+    form input:focus, form textarea:focus, form select:focus {
+      outline: none;
+      border-color: #2563eb;
+      background: #f3f4f6;
+      color: #111518;
+    }
+    @media (prefers-color-scheme: dark) {
+      form input, form textarea, form select {
+        background: #18181b;
+        color: #fff;
+        border-color: #27272a;
+      }
+      form input:focus, form textarea:focus, form select:focus {
+        background: #27272a;
+        color: #fff;
+        border-color: #2563eb;
+      }
+    }
   </style>
 </head>
 <body style='font-family:"Plus Jakarta Sans","Noto Sans",sans-serif;'>
-<div class="relative flex min-h-screen flex-col group/design-root overflow-x-hidden">
+<div class="relative flex min-h-screen flex-col group/design-root overflow-x-hidden bg-neutral-100 dark:bg-neutral-950">
   <div class="layout-container flex h-full grow flex-col">
     <header class="flex items-center justify-between border-b px-4 sm:px-6 lg:px-10 py-3 w-full bg-neutral-100 dark:bg-neutral-900" style="position:relative;">
       <a id="brand" href="{{ url_for('home') }}" class="flex items-center gap-4 text-[#111518] dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 rounded">
@@ -232,14 +307,13 @@ SHELL = '''
             <defs><clipPath id="clip0_6_535"><rect width="48" height="48" fill="white"/></clipPath></defs>
           </svg>
         </div>
-        <h2 class="text-[#111518] dark:text-white text-lg font-bold leading-tight tracking-[-0.015em]">Somewheria, LLC.</h2>
       </a>
       <nav class="desktop-nav flex-1 hidden sm:block" aria-label="Main navigation">
         <ul class="flex items-center gap-6 justify-center w-full">
-          <li><a href="{{ url_for('home') }}" class="text-[#111518] dark:text-white text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] dark:hover:bg-neutral-800 hover:rounded hover:text-blue-600 px-3 py-2">Home</a></li>
-          <li><a href="{{ url_for('for_rent') }}" class="text-[#111518] dark:text-white text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] dark:hover:bg-neutral-800 hover:rounded hover:text-blue-600 px-3 py-2">For Rent</a></li>
-          <li><a href="{{ url_for('about') }}" class="text-[#111518] dark:text-white text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] dark:hover:bg-neutral-800 hover:rounded hover:text-blue-600 px-3 py-2">About Us</a></li>
-          <li><a href="{{ url_for('contact') }}" class="text-[#111518] dark:text-white text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] dark:hover:bg-neutral-800 hover:rounded hover:text-blue-600 px-3 py-2">Contact Us</a></li>
+          <li><a href="{{ url_for('home') }}" class="text-[#111518] dark:text-white text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] dark:hover:bg-neutral-800 hover:rounded hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2">Home</a></li>
+          <li><a href="{{ url_for('for_rent') }}" class="text-[#111518] dark:text-white text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] dark:hover:bg-neutral-800 hover:rounded hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2">For Rent</a></li>
+          <li><a href="{{ url_for('about') }}" class="text-[#111518] dark:text-white text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] dark:hover:bg-neutral-800 hover:rounded hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2">About Us</a></li>
+          <li><a href="{{ url_for('contact') }}" class="text-[#111518] dark:text-white text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] dark:hover:bg-neutral-800 hover:rounded hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2">Contact Us</a></li>
         </ul>
       </nav>
       <div class="flex flex-1 justify-end items-center">
@@ -247,11 +321,11 @@ SHELL = '''
           <div class="bar1"></div>
           <div class="bar2"></div>
           <div class="bar3"></div>
-          <ul class="mobile-menu dark:bg-neutral-900 dark:text-white">
-            <li><a href="{{ url_for('home') }}" class="dark:text-white">Home</a></li>
-            <li><a href="{{ url_for('for_rent') }}" class="dark:text-white">For Rent</a></li>
-            <li><a href="{{ url_for('about') }}" class="dark:text-white">About Us</a></li>
-            <li><a href="{{ url_for('contact') }}" class="dark:text-white">Contact Us</a></li>
+          <ul class="mobile-menu bg-white text-[#111518] dark:bg-neutral-900 dark:text-white">
+            <li><a href="{{ url_for('home') }}" class="text-[#111518] dark:text-white">Home</a></li>
+            <li><a href="{{ url_for('for_rent') }}" class="text-[#111518] dark:text-white">For Rent</a></li>
+            <li><a href="{{ url_for('about') }}" class="text-[#111518] dark:text-white">About Us</a></li>
+            <li><a href="{{ url_for('contact') }}" class="text-[#111518] dark:text-white">Contact Us</a></li>
           </ul>
         </div>
       </div>
@@ -261,28 +335,14 @@ SHELL = '''
         menu.classList.toggle('open');
       }
     </script>
-    <main class="flex-1 dark:bg-neutral-950 dark:text-white">{% block content %}{% endblock %}</main>
-   <footer class="py-5 text-center bg-gray-100 dark:bg-neutral-900">
-  <p class="text-gray-600 dark:text-gray-300 mb-2">&copy; 2024/25 Somewheria, LLC. All Rights Reserved.</p>
-  <div>
-      <a href="{{ url_for('report_issue_complete') }}" class="text-blue-600 dark:text-blue-400 underline text-sm">Report an issue</a>
+    <main class="flex-1 bg-neutral-100 text-[#111518] dark:bg-neutral-950 dark:text-white">{% block content %}{% endblock %}</main>
+    <footer class="py-5 text-center bg-gray-100 text-gray-600 dark:bg-neutral-900 dark:text-gray-300">
+      <p class="mb-2">&copy; 2024/25 Somewheria, LLC. All Rights Reserved.</p>
+      <div>
+        <a href="{{ url_for('report_issue_form') }}" class="text-blue-600 dark:text-blue-400 underline text-sm">Report an issue</a>
+      </div>
+    </footer>
   </div>
-</footer>
-<script>
-// Auto-detect system dark mode and apply Tailwind dark class
-if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-  document.documentElement.classList.add('dark');
-} else {
-  document.documentElement.classList.remove('dark');
-}
-window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
-  if (e.matches) {
-    document.documentElement.classList.add('dark');
-  } else {
-    document.documentElement.classList.remove('dark');
-  }
-});
-</script>
 </div>
 </body>
 </html>
@@ -405,16 +465,16 @@ def for_rent():
         {% else %}
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {% for prop in properties %}
-            <div class="rounded shadow p-4 bg-white">
+            <div class="rounded shadow p-4 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800">
                 <a href="{{ url_for('property_details', uuid=prop.id) }}">
-                    <img src="{{ prop.thumbnail }}" alt="Property Image" class="rounded mb-3 w-full h-48 object-cover" />
-                    <div class="font-bold text-lg">{{ prop.name }}</div>
-                    <div class="text-gray-600">{{ prop.address }}</div>
-                    <div class="mt-2 text-blue-800 font-semibold">${{ prop.rent }}/mo</div>
+                    <img src="{{ prop.thumbnail }}" alt="Property Image" class="rounded mb-3 w-full h-48 object-cover bg-neutral-100 dark:bg-neutral-950" />
+                    <div class="font-bold text-lg text-[#111518] dark:text-white">{{ prop.name }}</div>
+                    <div class="text-gray-600 dark:text-gray-300">{{ prop.address }}</div>
+                    <div class="mt-2 text-blue-800 dark:text-blue-400 font-semibold">${{ prop.rent }}/mo</div>
                 </a>
                 <div class="mt-3">
                     <a href="{{ url_for('property_details', uuid=prop.id) }}"
-                    class="underline text-blue-600">Details</a>
+                    class="underline text-blue-600 dark:text-blue-400">Details</a>
                 </div>
             </div>
         {% endfor %}
@@ -528,93 +588,93 @@ def property_details(uuid):
     nowdate = datetime.date.today().strftime("%Y-%m-%d")
     detail_html = """
     {% block content %}
-<div class="px-4 sm:px-8 md:px-16 lg:px-24 flex flex-col items-center py-7 bg-neutral-950">
-      <div class="max-w-[960px] w-full relative">
-        <div class="bg-neutral-900 rounded-xl mb-5 relative">
-          <!-- Carousel -->
-          <div class="relative flex justify-center items-center" style="height: 360px; overflow:hidden;">
-            {% set image_count = property.photos | length %}
-            <img 
-              id="carouselImg" 
-              src="{{ property.thumbnail }}" 
-              alt="Property Image" 
-              class="rounded object-cover w-full h-80 transition-all duration-300"
-              style="max-height: 340px;"
-            />
-            <button id="carouselPrev" class="absolute left-1 top-1/2 -translate-y-1/2 px-2 py-2 rounded-full bg-neutral-800 hover:bg-blue-900 text-white" style="z-index:15;">
-              &#8249;
-            </button>
-            <button id="carouselNext" class="absolute right-1 top-1/2 -translate-y-1/2 px-2 py-2 rounded-full bg-neutral-800 hover:bg-blue-900 text-white" style="z-index:15;">
-              &#8250;
-            </button>
-            <div class="absolute bottom-2 right-5 flex gap-1">
-              {% for idx in range(image_count) %}
-                <span class="block w-2 h-2 rounded-full {% if idx==0 %}bg-blue-500{% else %}bg-neutral-700{% endif %} carousel-dot" data-idx="{{ idx }}"></span>
-              {% endfor %}
-            </div>
-          </div>
-        </div>
-        <!-- Main content -->
-        <h1 class="text-white text-[22px] font-bold tracking-tight px-4 pb-3 pt-5">{{ property.name }}</h1>
-        <p class="text-white text-base pb-3 pt-1 px-4">{{ property.blurb }}</p>
-        <h2 class="text-white text-[22px] font-bold px-4 pb-3 pt-5">Property Details</h2>
-        <div class="p-4 grid grid-cols-2">
-          <div class="flex flex-col gap-1 border-t border-neutral-800 py-4 pr-2"><p class="text-neutral-400 text-sm">Address</p><p class="text-white text-sm">{{ property.address }}</p></div>
-          <div class="flex flex-col gap-1 border-t border-neutral-800 py-4 pl-2"><p class="text-neutral-400 text-sm">Rent</p><p class="text-white text-sm">${{ property.rent }}/month</p></div>
-          <div class="flex flex-col gap-1 border-t border-neutral-800 py-4 pr-2"><p class="text-neutral-400 text-sm">Deposit</p><p class="text-white text-sm">${{ property.deposit }}</p></div>
-          <div class="flex flex-col gap-1 border-t border-neutral-800 py-4 pl-2"><p class="text-neutral-400 text-sm">Square Footage</p><p class="text-white text-sm">{{ property.sqft }} sq ft</p></div>
-          <div class="flex flex-col gap-1 border-t border-neutral-800 py-4 pr-2"><p class="text-neutral-400 text-sm">Bedrooms</p><p class="text-white text-sm">{{ property.bedrooms }}</p></div>
-          <div class="flex flex-col gap-1 border-t border-neutral-800 py-4 pl-2"><p class="text-neutral-400 text-sm">Bathrooms</p><p class="text-white text-sm">{{ property.bathrooms }}</p></div>
-          <div class="flex flex-col gap-1 border-t border-neutral-800 py-4 pr-2"><p class="text-neutral-400 text-sm">Lease Term</p><p class="text-white text-sm">{{ property.lease_length }}</p></div>
-          <div class="flex flex-col gap-1 border-t border-neutral-800 py-4 pl-2"><p class="text-neutral-400 text-sm">Amenities</p><p class="text-white text-sm">{{ property.included_amenities|join(', ') }}</p></div>
-          <div class="flex flex-col gap-1 border-t border-neutral-800 py-4 pr-2"><p class="text-neutral-400 text-sm">Pets Allowed</p>
-            <p class="text-white text-sm">
-              {% if property.pets_allowed is defined %}
-                {{ property.pets_allowed }}
-              {% else %}
-                Unknown
-              {% endif %}
-            </p>
-          </div>
-        </div>
-        <h2 class="text-white text-[22px] font-bold px-4 pb-3 pt-5">Description</h2>
-        <p class="text-white text-base pb-3 pt-1 px-4">{{ property.description or property.blurb }}</p>
-        <!-- Request Appointment Button -->
-        <div class="px-4 pt-6 flex justify-end">
-          <button id="openCalModal" class="bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 font-bold shadow">
-            Request Appointment
-          </button>
-        </div>
-        <!-- Calendar Modal -->
-        <div id="calModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 hidden">
-          <div class="bg-neutral-900 rounded p-6 w-full max-w-[370px] shadow">
-            <div class="flex justify-between items-center mb-5">
-              <div class="text-lg font-bold text-white">Request an Appointment</div>
-              <button onclick="closeCalModal()" class="bg-neutral-800 rounded px-2 py-1 text-lg leading-none text-white">&times;</button>
-            </div>
-            <form id="apptForm">
-              <label for="apptName" class="font-semibold text-sm text-white">Your Name:</label>
-              <input id="apptName" type="text" required class="w-full border rounded mb-3 p-2 bg-neutral-950 text-white border-neutral-800"/>
-              <label class="font-semibold text-sm block mb-2 text-white">Choose Date:</label>
-              <input id="apptDate" name="date" type="date" min="{{ nowdate }}" required class="mb-3 border rounded p-2 w-full bg-neutral-950 text-white border-neutral-800"/>
-              <label for="contactMethod" class="font-semibold text-sm block mb-2 text-white">Preferred Contact Method:</label>
-              <select id="contactMethod" name="contactMethod" class="w-full border rounded mb-3 p-2 bg-neutral-950 text-white border-neutral-800">
-                <option value="email">Email</option>
-                <option value="text">Text</option>
-              </select>
-              <div id="contactInfoContainer">
-                <label for="contactInfo" class="font-semibold text-sm block mb-2 text-white">Your Email:</label>
-                <input id="contactInfo" type="email" name="contactInfo" required class="w-full border rounded mb-3 p-2 bg-neutral-950 text-white border-neutral-800"/>
-              </div>
-              <div id="apptDateFeedback" class="text-red-400 text-xs mb-2"></div>
-              <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 w-full">Request Booking</button>
-              <div id="apptSubmitFeedback" class="text-green-400 text-xs mt-2"></div>
-            </form>
-          </div>
+<div class="px-4 sm:px-8 md:px-16 lg:px-24 flex flex-col items-center py-7 bg-white dark:bg-neutral-950">
+  <div class="max-w-[960px] w-full relative">
+    <div class="bg-white dark:bg-neutral-900 rounded-xl mb-5 relative">
+      <!-- Carousel -->
+      <div class="relative flex justify-center items-center" style="height: 360px; overflow:hidden;">
+        {% set image_count = property.photos | length %}
+        <img 
+          id="carouselImg" 
+          src="{{ property.thumbnail }}" 
+          alt="Property Image" 
+          class="rounded object-cover w-full h-80 transition-all duration-300 bg-neutral-100 dark:bg-neutral-950"
+          style="max-height: 340px;"
+        />
+        <button id="carouselPrev" class="absolute left-1 top-1/2 -translate-y-1/2 px-2 py-2 rounded-full bg-neutral-200 dark:bg-neutral-800 hover:bg-blue-100 dark:hover:bg-blue-900 text-[#111518] dark:text-white" style="z-index:15;">
+          &#8249;
+        </button>
+        <button id="carouselNext" class="absolute right-1 top-1/2 -translate-y-1/2 px-2 py-2 rounded-full bg-neutral-200 dark:bg-neutral-800 hover:bg-blue-100 dark:hover:bg-blue-900 text-[#111518] dark:text-white" style="z-index:15;">
+          &#8250;
+        </button>
+        <div class="absolute bottom-2 right-5 flex gap-1">
+          {% for idx in range(image_count) %}
+            <span class="block w-2 h-2 rounded-full {% if idx==0 %}bg-blue-500{% else %}bg-neutral-300 dark:bg-neutral-700{% endif %} carousel-dot" data-idx="{{ idx }}"></span>
+          {% endfor %}
         </div>
       </div>
     </div>
-    <script>
+    <!-- Main content -->
+    <h1 class="text-[#111518] dark:text-white text-[22px] font-bold tracking-tight px-4 pb-3 pt-5">{{ property.name }}</h1>
+    <p class="text-[#111518] dark:text-white text-base pb-3 pt-1 px-4">{{ property.blurb }}</p>
+    <h2 class="text-[#111518] dark:text-white text-[22px] font-bold px-4 pb-3 pt-5">Property Details</h2>
+    <div class="p-4 grid grid-cols-2">
+      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pr-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Address</p><p class="text-[#111518] dark:text-white text-sm">{{ property.address }}</p></div>
+      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pl-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Rent</p><p class="text-[#111518] dark:text-white text-sm">${{ property.rent }}/month</p></div>
+      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pr-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Deposit</p><p class="text-[#111518] dark:text-white text-sm">${{ property.deposit }}</p></div>
+      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pl-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Square Footage</p><p class="text-[#111518] dark:text-white text-sm">{{ property.sqft }} sq ft</p></div>
+      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pr-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Bedrooms</p><p class="text-[#111518] dark:text-white text-sm">{{ property.bedrooms }}</p></div>
+      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pl-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Bathrooms</p><p class="text-[#111518] dark:text-white text-sm">{{ property.bathrooms }}</p></div>
+      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pr-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Lease Term</p><p class="text-[#111518] dark:text-white text-sm">{{ property.lease_length }}</p></div>
+      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pl-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Amenities</p><p class="text-[#111518] dark:text-white text-sm">{{ property.included_amenities|join(', ') }}</p></div>
+      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pr-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Pets Allowed</p>
+        <p class="text-[#111518] dark:text-white text-sm">
+          {% if property.pets_allowed is defined %}
+            {{ property.pets_allowed }}
+          {% else %}
+            Unknown
+          {% endif %}
+        </p>
+      </div>
+    </div>
+    <h2 class="text-[#111518] dark:text-white text-[22px] font-bold px-4 pb-3 pt-5">Description</h2>
+    <p class="text-[#111518] dark:text-white text-base pb-3 pt-1 px-4">{{ property.description or property.blurb }}</p>
+    <!-- Request Appointment Button -->
+    <div class="px-4 pt-6 flex justify-end">
+      <button id="openCalModal" class="bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 font-bold shadow">
+        Request Appointment
+      </button>
+    </div>
+    <!-- Calendar Modal -->
+    <div id="calModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 hidden">
+      <div class="bg-white dark:bg-neutral-900 rounded p-6 w-full max-w-[370px] shadow">
+        <div class="flex justify-between items-center mb-5">
+          <div class="text-lg font-bold text-[#111518] dark:text-white">Request an Appointment</div>
+          <button onclick="closeCalModal()" class="bg-neutral-200 dark:bg-neutral-800 rounded px-2 py-1 text-lg leading-none text-[#111518] dark:text-white">&times;</button>
+        </div>
+        <form id="apptForm">
+          <label for="apptName" class="font-semibold text-sm text-[#111518] dark:text-white">Your Name:</label>
+          <input id="apptName" type="text" required class="w-full border rounded mb-3 p-2 bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800"/>
+          <label class="font-semibold text-sm block mb-2 text-[#111518] dark:text-white">Choose Date:</label>
+          <input id="apptDate" name="date" type="date" min="{{ nowdate }}" required class="mb-3 border rounded p-2 w-full bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800"/>
+          <label for="contactMethod" class="font-semibold text-sm block mb-2 text-[#111518] dark:text-white">Preferred Contact Method:</label>
+          <select id="contactMethod" name="contactMethod" class="w-full border rounded mb-3 p-2 bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800">
+            <option value="email">Email</option>
+            <option value="text">Text</option>
+          </select>
+          <div id="contactInfoContainer">
+            <label for="contactInfo" class="font-semibold text-sm block mb-2 text-[#111518] dark:text-white">Your Email:</label>
+            <input id="contactInfo" type="email" name="contactInfo" required class="w-full border rounded mb-3 p-2 bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800"/>
+          </div>
+          <div id="apptDateFeedback" class="text-red-400 text-xs mb-2"></div>
+          <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 w-full">Request Booking</button>
+          <div id="apptSubmitFeedback" class="text-green-400 text-xs mt-2"></div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
     // Carousel
     document.addEventListener("DOMContentLoaded", function() {
       let images = {{ property.photos | tojson }};
@@ -840,14 +900,23 @@ def about():
 def contact():
     contact_html = """
     {% block content %}
-        <div class="px-4 sm:px-8 md:px-16 lg:px-24 py-6 sm:py-10 md:py-12 max-w-full sm:max-w-2xl mx-auto">
-        <h2 class="text-2xl font-bold mb-4">Contact Us</h2>
-        <form action="mailto:contact@somewheria.com" method="POST" enctype="text/plain" class="mt-4 max-w-md">
-            <input type="text" placeholder="Your Name" required class="w-full p-2 mb-3 border rounded">
-            <input type="email" placeholder="Your Email" required class="w-full p-2 mb-3 border rounded">
-            <textarea placeholder="Your Message" rows="5" required class="w-full p-2 mb-3 border rounded"></textarea>
-            <input type="submit" value="Send Message" class="mt-2 bg-blue-500 text-white px-4 py-2 rounded cursor-pointer hover:bg-blue-600">
-        </form>
+    <div class="px-4 sm:px-8 md:px-16 lg:px-24 py-6 sm:py-10 md:py-12 max-w-full sm:max-w-2xl mx-auto">
+      <h2 class="text-2xl font-bold mb-4 text-[#111518] dark:text-white">Contact Us</h2>
+      <form action="mailto:contact@somewheria.com" method="POST" enctype="text/plain" class="mt-4 max-w-md bg-white dark:bg-neutral-900 rounded shadow p-6">
+        <div class="mb-4">
+          <label for="contactName" class="block text-sm font-semibold text-[#111518] dark:text-white mb-2">Your Name</label>
+          <input type="text" id="contactName" name="name" placeholder="Your Name" required class="w-full p-2 border rounded bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800" />
+        </div>
+        <div class="mb-4">
+          <label for="contactEmail" class="block text-sm font-semibold text-[#111518] dark:text-white mb-2">Your Email</label>
+          <input type="email" id="contactEmail" name="email" placeholder="Your Email" required class="w-full p-2 border rounded bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800" />
+        </div>
+        <div class="mb-4">
+          <label for="contactMessage" class="block text-sm font-semibold text-[#111518] dark:text-white mb-2">Your Message</label>
+          <textarea id="contactMessage" name="message" placeholder="Your Message" rows="5" required class="w-full p-2 border rounded bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800"></textarea>
+        </div>
+        <input type="submit" value="Send Message" class="mt-2 bg-blue-500 text-white px-4 py-2 rounded cursor-pointer hover:bg-blue-600 font-bold shadow" />
+      </form>
     </div>
     {% endblock %}
     """
@@ -893,16 +962,16 @@ def view_logs():
                         year, month, day, hour, minute, second = match.groups()
                         months = ['January','February','March','April','May','June','July','August','September','October','November','December']
                         month_word = months[int(month)-1] if month.isdigit() and 1 <= int(month) <= 12 else month
-                        hour_word = number_to_words(hour)
-                        minute_word = number_to_words(minute)
-                        # For seconds, keep as is if it has comma (milliseconds)
-                        second_main = second.split(',')[0]
-                        second_word = number_to_words(second_main)
-                        ms = ''
-                        if ',' in second:
-                            ms = ',' + second.split(',')[1]
-                        return f"{month_word} {int(day)}, {year} at {hour_word} {minute_word} {second_word}{ms}"
-                    return ts
+                        hour_word = number_to_words(hour);
+                        minute_word = number_to_words(minute);
+                    # For seconds, keep as is if it has comma (milliseconds)
+                    second_main = second.split(',')[0]
+                    second_word = number_to_words(second_main)
+                    ms = ''
+                    if ',' in second:
+                        ms = ',' + second.split(',')[1]
+                    return f"{month_word} {number_to_words(day)}, {year} at {hour_word} {minute_word} {second_word}{ms}"
+                    return ts;
                 # Remove ANSI escape codes from message for readability
                 import re
                 ansi_escape = re.compile(r'\x1B\[[0-9;]*[mK]')
@@ -960,6 +1029,31 @@ def view_logs():
     {% endblock %}
     '''
     return render_template_string(SHELL.replace('{% block content %}{% endblock %}', log_html), log_entries=log_entries, title="Logger")
+
+# GET route to render the report issue form
+@app.route("/report-issue", methods=["GET"])
+def report_issue_form():
+    form_html = """
+    {% block content %}
+    <div class="px-4 sm:px-8 md:px-16 lg:px-24 py-10 max-w-full sm:max-w-2xl mx-auto">
+      <h2 class="text-2xl font-bold mb-6 text-[#111518] dark:text-white text-center drop-shadow-lg">Report an Issue</h2>
+      <form action="{{ url_for('report_issue') }}" method="POST" class="bg-white dark:bg-neutral-900 rounded shadow p-6">
+        <div class="mb-4">
+          <label for="name" class="block text-sm font-semibold text-[#111518] dark:text-white mb-2">Your Name</label>
+          <input type="text" id="name" name="name" required class="w-full p-2 border rounded bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800" />
+        </div>
+        <div class="mb-4">
+          <label for="description" class="block text-sm font-semibold text-[#111518] dark:text-white mb-2">Issue Description</label>
+          <textarea id="description" name="description" rows="5" required class="w-full p-2 border rounded bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800"></textarea>
+        </div>
+        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-bold shadow">Submit Issue</button>
+      </form>
+    </div>
+    {% endblock %}
+    """
+    return render_template_string(SHELL.replace("{% block content %}{% endblock %}", form_html), title="Report an Issue")
+
+# POST route to handle form submission
 @app.route("/report-issue", methods=["POST"])
 def report_issue():
     user_name = request.form.get("name")
@@ -968,22 +1062,32 @@ def report_issue():
         return "Name and description are required fields.", 400
     email_body = f"Issue reported by {user_name}:\n\n{issue_description}"
     send_email("User Reported Issue", email_body)
-    return render_template_string(SHELL.replace(
-        "{% block content %}{% endblock %}",
-        """
-        {% block content %}
-        <div class="px-4 sm:px-8 md:px-16 lg:px-24 py-6 sm:py-10 md:py-12 max-w-full sm:max-w-2xl mx-auto">
-            <div class="bg-green-100 text-green-800 font-bold px-6 py-5 rounded mb-8">
-                Thank you {{ name }}, your report has been submitted!
-            </div>
-            <div class="text-gray-800">
-                <div><strong>Submitted Description:</strong></div>
-                <div class="bg-gray-50 border px-4 py-2 rounded mt-2 mb-4">{{ desc }}</div>
-            </div>
-            <a class="text-blue-600 underline" href="{{ url_for('home') }}">Back to home</a>
+    confirmation_html = f"""
+    {{% block content %}}
+    <div class='px-4 sm:px-8 md:px-16 lg:px-24 py-10 max-w-full sm:max-w-2xl mx-auto'>
+      <h2 class='text-2xl font-bold mb-6 text-[#111518] dark:text-white text-center drop-shadow-lg'>Report an Issue</h2>
+      <div class="bg-green-100 text-green-800 font-bold px-6 py-5 rounded mb-8 text-center">
+        Thank you {user_name}, your report has been submitted!
+      </div>
+      <div class="text-gray-800 mb-6">
+        <div><strong>Submitted Description:</strong></div>
+        <div class="bg-gray-50 border px-4 py-2 rounded mt-2 mb-4">{issue_description}</div>
+      </div>
+      <form action="{{{{ url_for('report_issue') }}}}" method="POST" class="bg-white dark:bg-neutral-900 rounded shadow p-6">
+        <div class="mb-4">
+          <label for="name" class="block text-sm font-semibold text-[#111518] dark:text-white mb-2">Your Name</label>
+          <input type="text" id="name" name="name" required class="w-full p-2 border rounded bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800" />
         </div>
-        {% endblock %}
-        """), name=user_name, desc=issue_description)
+        <div class="mb-4">
+          <label for="description" class="block text-sm font-semibold text-[#111518] dark:text-white mb-2">Issue Description</label>
+          <textarea id="description" name="description" rows="5" required class="w-full p-2 border rounded bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800"></textarea>
+        </div>
+        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-bold shadow">Submit Issue</button>
+      </form>
+    </div>
+    {{% endblock %}}
+    """
+    return render_template_string(SHELL.replace("{% block content %}{% endblock %}", confirmation_html), name=user_name, desc=issue_description)
 @app.route("/save-edit/<id>", methods=["POST"])
 def save_edit(id):
     try:
@@ -1034,3 +1138,4 @@ if __name__ == "__main__":
     print("Warming property cache and processing images...")
     print_check_file(PROPERTY_APPTS_FILE, "Appointments file at startup")
     app.run("0.0.0.0", port=80, debug=False)
+
