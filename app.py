@@ -10,9 +10,23 @@ from PIL import Image, ImageOps
 from email.message import EmailMessage
 from flask import Flask, jsonify, render_template_string, request, g, url_for
 from dotenv import load_dotenv
-# App initial setup
 load_dotenv()
 app = Flask(__name__)
+@app.route("/report-issue-complete")
+def report_issue_complete():
+    issue_form_html = """
+    {% block content %}
+    <div class='px-4 sm:px-8 md:px-16 lg:px-24 py-10 max-w-full sm:max-w-2xl mx-auto'>
+      <h2 class='text-2xl font-bold mb-6'>Report an Issue</h2>
+      <form action='/report-issue' method='post' class='max-w-lg mx-auto'>
+        <input type='text' name='name' placeholder='Your Name' required class='w-full p-2 mb-3 border rounded'>
+        <textarea name='description' rows='5' placeholder='Describe the issue, request, or question...' required class='w-full p-2 mb-3 border rounded'></textarea>
+        <button type='submit' class='bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 w-full'>Submit</button>
+      </form>
+    </div>
+    {% endblock %}
+    """
+    return render_template_string(SHELL.replace("{% block content %}{% endblock %}", issue_form_html), title="Report an Issue")
 LOG_FILE = "application.log"
 logging.basicConfig(
     filename=LOG_FILE,
@@ -70,7 +84,14 @@ def send_email(subject, body):
     msg['Subject'] = subject
     msg['From'] = sender_email
     msg['To'] = sender_email
-    body += "\nView application logs here: http://localhost:5000/logs"
+    import socket
+    try:
+        hostname = socket.gethostname()
+        ip_addr = socket.gethostbyname(hostname)
+        server_url = f"http://{ip_addr}:5000"
+    except Exception:
+        server_url = "http://localhost:5000"
+    body += f"\nView application logs here: {server_url}/logs"
     msg.set_content(body)
     try:
         with smtplib.SMTP(smtp_server, port) as server:
@@ -248,11 +269,7 @@ SHELL = '''
    <footer class="py-5 text-center bg-gray-100">
   <p class="text-gray-600 mb-2">&copy; 2024/25 Somewheria, LLC. All Rights Reserved.</p>
   <div>
-    <form action="/report-issue" method="post" class="max-w-md mx-auto">
-      <input type="text" name="name" placeholder="Your Name" required class="w-full p-2 mb-3 border rounded">
-      <textarea name="description" rows="3" placeholder="Issue, request, or question..." required class="w-full p-2 mb-3 border rounded"></textarea>
-      <button type="submit" class="bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 w-full">Submit request via email</button>
-    </form>
+      <a href="{{ url_for('report_issue_complete') }}" class="text-blue-600 underline text-sm">Report an issue</a>
   </div>
 </footer>
 </div>
@@ -824,12 +841,112 @@ def contact():
     return render_template_string(SHELL.replace("{% block content %}{% endblock %}", contact_html), title="Contact")
 @app.route("/logs")
 def view_logs():
+    log_entries = []
     if os.path.exists(LOG_FILE):
-        with open(LOG_FILE, 'r') as log_file:
-            log_content = log_file.read()
-        return f"<pre>{log_content}</pre>"
-    else:
-        return "No logs available."
+        with open(LOG_FILE, 'r', encoding='utf-8', errors='replace') as log_file:
+            for line in log_file:
+                line = line.strip()
+                if not line:
+                    continue
+                # Parse log line: '2025-07-12 12:34:56,789:ERROR:message'
+                parts = line.split(':', 2)
+                if len(parts) == 3:
+                    timestamp, level, message = parts
+                else:
+                    timestamp, level, message = '', '', line
+                # Attempt to parse timestamp and replace numbers with words
+                def number_to_words(n):
+                    # Only for 0-59
+                    words = [
+                        'zero','one','two','three','four','five','six','seven','eight','nine','ten',
+                        'eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen','twenty',
+                        'twenty-one','twenty-two','twenty-three','twenty-four','twenty-five','twenty-six','twenty-seven','twenty-eight','twenty-nine','thirty',
+                        'thirty-one','thirty-two','thirty-three','thirty-four','thirty-five','thirty-six','thirty-seven','thirty-eight','thirty-nine','forty',
+                        'forty-one','forty-two','forty-three','forty-four','forty-five','forty-six','forty-seven','forty-eight','forty-nine','fifty',
+                        'fifty-one','fifty-two','fifty-three','fifty-four','fifty-five','fifty-six','fifty-seven','fifty-eight','fifty-nine'
+                    ]
+                    try:
+                        n = int(n)
+                        if 0 <= n < 60:
+                            return words[n]
+                    except:
+                        pass
+                    return str(n)
+                def timestamp_to_words(ts):
+                    import re
+                    # Example: '2025-07-12 20\t59\t53,152'
+                    match = re.match(r'(\d{4})-(\d{2})-(\d{2})[\s\t]+(\d{2})[\t:]+(\d{2})[\t:]+([\d,]+)', ts)
+                    if match:
+                        year, month, day, hour, minute, second = match.groups()
+                        months = ['January','February','March','April','May','June','July','August','September','October','November','December']
+                        month_word = months[int(month)-1] if month.isdigit() and 1 <= int(month) <= 12 else month
+                        hour_word = number_to_words(hour)
+                        minute_word = number_to_words(minute)
+                        # For seconds, keep as is if it has comma (milliseconds)
+                        second_main = second.split(',')[0]
+                        second_word = number_to_words(second_main)
+                        ms = ''
+                        if ',' in second:
+                            ms = ',' + second.split(',')[1]
+                        return f"{month_word} {int(day)}, {year} at {hour_word} {minute_word} {second_word}{ms}"
+                    return ts
+                # Remove ANSI escape codes from message for readability
+                import re
+                ansi_escape = re.compile(r'\x1B\[[0-9;]*[mK]')
+                clean_message = ansi_escape.sub('', message)
+                log_entries.append({
+                    'timestamp': timestamp_to_words(timestamp),
+                    'level': level,
+                    'message': clean_message
+                })
+    log_html = '''
+    {% block content %}
+    <div class="px-4 sm:px-8 md:px-16 lg:px-24 py-10 max-w-full sm:max-w-3xl mx-auto">
+      <h2 class="text-2xl font-bold mb-6">Application Logs</h2>
+      <div class="mb-4 flex items-center gap-3">
+        <input id="logSearch" type="text" placeholder="Search logs..." class="border rounded p-2 w-full max-w-xs" />
+        <button onclick="location.reload()" class="bg-blue-500 text-white px-3 py-2 rounded hover:bg-blue-600">Refresh</button>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm border rounded shadow">
+          <thead class="bg-gray-100">
+            <tr>
+              <th class="px-3 py-2 text-left">Timestamp</th>
+              <th class="px-3 py-2 text-left">Level</th>
+              <th class="px-3 py-2 text-left">Message</th>
+            </tr>
+          </thead>
+          <tbody id="logTableBody">
+            {% for entry in log_entries %}
+            <tr class="{% if entry.level.strip() == 'ERROR' %}bg-red-50{% elif entry.level.strip() == 'WARNING' %}bg-yellow-50{% elif entry.level.strip() == 'INFO' %}bg-blue-50{% endif %}">
+              <td class="px-3 py-2 whitespace-nowrap">{{ entry.timestamp }}</td>
+              <td class="px-3 py-2">
+                <span class="px-2 py-1 rounded text-xs font-bold {% if entry.level.strip() == 'ERROR' %}bg-red-500 text-white{% elif entry.level.strip() == 'WARNING' %}bg-yellow-400 text-black{% elif entry.level.strip() == 'INFO' %}bg-blue-400 text-white{% else %}bg-gray-300 text-black{% endif %}">{{ entry.level }}</span>
+              </td>
+              <td class="px-3 py-2">{{ entry.message }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% if not log_entries %}
+          <div class="text-gray-500 py-8 text-center">No logs available.</div>
+        {% endif %}
+      </div>
+    </div>
+    <script>
+    // Simple client-side search
+    document.getElementById('logSearch').addEventListener('input', function() {
+      var filter = this.value.toLowerCase();
+      var rows = document.querySelectorAll('#logTableBody tr');
+      rows.forEach(function(row) {
+        var text = row.textContent.toLowerCase();
+        row.style.display = text.includes(filter) ? '' : 'none';
+      });
+    });
+    </script>
+    {% endblock %}
+    '''
+    return render_template_string(SHELL.replace('{% block content %}{% endblock %}', log_html), log_entries=log_entries, title="Logger")
 @app.route("/report-issue", methods=["POST"])
 def report_issue():
     user_name = request.form.get("name")
@@ -904,3 +1021,5 @@ if __name__ == "__main__":
     print("Warming property cache and processing images...")
     print_check_file(PROPERTY_APPTS_FILE, "Appointments file at startup")
     app.run("0.0.0.0", port=5000, debug=True)
+
+
