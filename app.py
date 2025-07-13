@@ -14,19 +14,14 @@ load_dotenv()
 app = Flask(__name__)
 @app.route("/report-issue-complete")
 def report_issue_complete():
-    issue_form_html = """
+    issue_text_html = """
     {% block content %}
-    <div class='px-4 sm:px-8 md:px-16 lg:px-24 py-10 max-w-full sm:max-w-2xl mx-auto'>
-      <h2 class='text-2xl font-bold mb-6'>Report an Issue</h2>
-      <form action='/report-issue' method='post' class='max-w-lg mx-auto'>
-        <input type='text' name='name' placeholder='Your Name' required class='w-full p-2 mb-3 border rounded'>
-        <textarea name='description' rows='5' placeholder='Describe the issue, request, or question...' required class='w-full p-2 mb-3 border rounded'></textarea>
-        <button type='submit' class='bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 w-full'>Submit</button>
-      </form>
+    <div class='px-4 sm:px-8 md:px-16 lg:px-24 py-10 max-w-full sm:max-w-2xl mx-auto bg-neutral-950 rounded shadow'>
+      <h2 class='text-2xl font-bold mb-6 text-white !text-white text-center drop-shadow-lg'>Report an Issue</h2>
     </div>
     {% endblock %}
     """
-    return render_template_string(SHELL.replace("{% block content %}{% endblock %}", issue_form_html), title="Report an Issue")
+    return render_template_string(SHELL.replace("{% block content %}{% endblock %}", issue_text_html), title="Report an Issue")
 LOG_FILE = "application.log"
 logging.basicConfig(
     filename=LOG_FILE,
@@ -533,9 +528,9 @@ def property_details(uuid):
     nowdate = datetime.date.today().strftime("%Y-%m-%d")
     detail_html = """
     {% block content %}
-<div class="px-4 sm:px-8 md:px-16 lg:px-24 flex flex-col items-center py-7">
+<div class="px-4 sm:px-8 md:px-16 lg:px-24 flex flex-col items-center py-7 bg-neutral-950">
       <div class="max-w-[960px] w-full relative">
-        <div class="bg-white rounded-xl mb-5 relative">
+        <div class="bg-neutral-900 rounded-xl mb-5 relative">
           <!-- Carousel -->
           <div class="relative flex justify-center items-center" style="height: 360px; overflow:hidden;">
             {% set image_count = property.photos | length %}
@@ -546,34 +541,34 @@ def property_details(uuid):
               class="rounded object-cover w-full h-80 transition-all duration-300"
               style="max-height: 340px;"
             />
-            <button id="carouselPrev" class="absolute left-1 top-1/2 -translate-y-1/2 px-2 py-2 rounded-full bg-white/70 hover:bg-blue-100" style="z-index:15;">
+            <button id="carouselPrev" class="absolute left-1 top-1/2 -translate-y-1/2 px-2 py-2 rounded-full bg-neutral-800 hover:bg-blue-900 text-white" style="z-index:15;">
               &#8249;
             </button>
-            <button id="carouselNext" class="absolute right-1 top-1/2 -translate-y-1/2 px-2 py-2 rounded-full bg-white/70 hover:bg-blue-100" style="z-index:15;">
+            <button id="carouselNext" class="absolute right-1 top-1/2 -translate-y-1/2 px-2 py-2 rounded-full bg-neutral-800 hover:bg-blue-900 text-white" style="z-index:15;">
               &#8250;
             </button>
             <div class="absolute bottom-2 right-5 flex gap-1">
               {% for idx in range(image_count) %}
-                <span class="block w-2 h-2 rounded-full {% if idx==0 %}bg-blue-500{% else %}bg-gray-300{% endif %} carousel-dot" data-idx="{{ idx }}"></span>
+                <span class="block w-2 h-2 rounded-full {% if idx==0 %}bg-blue-500{% else %}bg-neutral-700{% endif %} carousel-dot" data-idx="{{ idx }}"></span>
               {% endfor %}
             </div>
           </div>
         </div>
         <!-- Main content -->
-        <h1 class="text-[#111518] text-[22px] font-bold tracking-tight px-4 pb-3 pt-5">{{ property.name }}</h1>
-        <p class="text-[#111518] text-base pb-3 pt-1 px-4">{{ property.blurb }}</p>
-        <h2 class="text-[#111518] text-[22px] font-bold px-4 pb-3 pt-5">Property Details</h2>
+        <h1 class="text-white text-[22px] font-bold tracking-tight px-4 pb-3 pt-5">{{ property.name }}</h1>
+        <p class="text-white text-base pb-3 pt-1 px-4">{{ property.blurb }}</p>
+        <h2 class="text-white text-[22px] font-bold px-4 pb-3 pt-5">Property Details</h2>
         <div class="p-4 grid grid-cols-2">
-          <div class="flex flex-col gap-1 border-t py-4 pr-2"><p class="text-[#60768a] text-sm">Address</p><p class="text-[#111518] text-sm">{{ property.address }}</p></div>
-          <div class="flex flex-col gap-1 border-t py-4 pl-2"><p class="text-[#60768a] text-sm">Rent</p><p class="text-[#111518] text-sm">${{ property.rent }}/month</p></div>
-          <div class="flex flex-col gap-1 border-t py-4 pr-2"><p class="text-[#60768a] text-sm">Deposit</p><p class="text-[#111518] text-sm">${{ property.deposit }}</p></div>
-          <div class="flex flex-col gap-1 border-t py-4 pl-2"><p class="text-[#60768a] text-sm">Square Footage</p><p class="text-[#111518] text-sm">{{ property.sqft }} sq ft</p></div>
-          <div class="flex flex-col gap-1 border-t py-4 pr-2"><p class="text-[#60768a] text-sm">Bedrooms</p><p class="text-[#111518] text-sm">{{ property.bedrooms }}</p></div>
-          <div class="flex flex-col gap-1 border-t py-4 pl-2"><p class="text-[#60768a] text-sm">Bathrooms</p><p class="text-[#111518] text-sm">{{ property.bathrooms }}</p></div>
-          <div class="flex flex-col gap-1 border-t py-4 pr-2"><p class="text-[#60768a] text-sm">Lease Term</p><p class="text-[#111518] text-sm">{{ property.lease_length }}</p></div>
-          <div class="flex flex-col gap-1 border-t py-4 pl-2"><p class="text-[#60768a] text-sm">Amenities</p><p class="text-[#111518] text-sm">{{ property.included_amenities|join(', ') }}</p></div>
-          <div class="flex flex-col gap-1 border-t py-4 pr-2"><p class="text-[#60768a] text-sm">Pets Allowed</p>
-            <p class="text-[#111518] text-sm">
+          <div class="flex flex-col gap-1 border-t border-neutral-800 py-4 pr-2"><p class="text-neutral-400 text-sm">Address</p><p class="text-white text-sm">{{ property.address }}</p></div>
+          <div class="flex flex-col gap-1 border-t border-neutral-800 py-4 pl-2"><p class="text-neutral-400 text-sm">Rent</p><p class="text-white text-sm">${{ property.rent }}/month</p></div>
+          <div class="flex flex-col gap-1 border-t border-neutral-800 py-4 pr-2"><p class="text-neutral-400 text-sm">Deposit</p><p class="text-white text-sm">${{ property.deposit }}</p></div>
+          <div class="flex flex-col gap-1 border-t border-neutral-800 py-4 pl-2"><p class="text-neutral-400 text-sm">Square Footage</p><p class="text-white text-sm">{{ property.sqft }} sq ft</p></div>
+          <div class="flex flex-col gap-1 border-t border-neutral-800 py-4 pr-2"><p class="text-neutral-400 text-sm">Bedrooms</p><p class="text-white text-sm">{{ property.bedrooms }}</p></div>
+          <div class="flex flex-col gap-1 border-t border-neutral-800 py-4 pl-2"><p class="text-neutral-400 text-sm">Bathrooms</p><p class="text-white text-sm">{{ property.bathrooms }}</p></div>
+          <div class="flex flex-col gap-1 border-t border-neutral-800 py-4 pr-2"><p class="text-neutral-400 text-sm">Lease Term</p><p class="text-white text-sm">{{ property.lease_length }}</p></div>
+          <div class="flex flex-col gap-1 border-t border-neutral-800 py-4 pl-2"><p class="text-neutral-400 text-sm">Amenities</p><p class="text-white text-sm">{{ property.included_amenities|join(', ') }}</p></div>
+          <div class="flex flex-col gap-1 border-t border-neutral-800 py-4 pr-2"><p class="text-neutral-400 text-sm">Pets Allowed</p>
+            <p class="text-white text-sm">
               {% if property.pets_allowed is defined %}
                 {{ property.pets_allowed }}
               {% else %}
@@ -582,8 +577,8 @@ def property_details(uuid):
             </p>
           </div>
         </div>
-        <h2 class="text-[#111518] text-[22px] font-bold px-4 pb-3 pt-5">Description</h2>
-        <p class="text-[#111518] text-base pb-3 pt-1 px-4">{{ property.description or property.blurb }}</p>
+        <h2 class="text-white text-[22px] font-bold px-4 pb-3 pt-5">Description</h2>
+        <p class="text-white text-base pb-3 pt-1 px-4">{{ property.description or property.blurb }}</p>
         <!-- Request Appointment Button -->
         <div class="px-4 pt-6 flex justify-end">
           <button id="openCalModal" class="bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 font-bold shadow">
@@ -592,28 +587,28 @@ def property_details(uuid):
         </div>
         <!-- Calendar Modal -->
         <div id="calModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 hidden">
-          <div class="bg-white rounded p-6 w-full max-w-[370px] shadow">
+          <div class="bg-neutral-900 rounded p-6 w-full max-w-[370px] shadow">
             <div class="flex justify-between items-center mb-5">
-              <div class="text-lg font-bold">Request an Appointment</div>
-              <button onclick="closeCalModal()" class="bg-gray-200 rounded px-2 py-1 text-lg leading-none">&times;</button>
+              <div class="text-lg font-bold text-white">Request an Appointment</div>
+              <button onclick="closeCalModal()" class="bg-neutral-800 rounded px-2 py-1 text-lg leading-none text-white">&times;</button>
             </div>
             <form id="apptForm">
-              <label for="apptName" class="font-semibold text-sm">Your Name:</label>
-              <input id="apptName" type="text" required class="w-full border rounded mb-3 p-2"/>
-              <label class="font-semibold text-sm block mb-2">Choose Date:</label>
-              <input id="apptDate" name="date" type="date" min="{{ nowdate }}" required class="mb-3 border rounded p-2 w-full"/>
-              <label for="contactMethod" class="font-semibold text-sm block mb-2">Preferred Contact Method:</label>
-              <select id="contactMethod" name="contactMethod" class="w-full border rounded mb-3 p-2">
+              <label for="apptName" class="font-semibold text-sm text-white">Your Name:</label>
+              <input id="apptName" type="text" required class="w-full border rounded mb-3 p-2 bg-neutral-950 text-white border-neutral-800"/>
+              <label class="font-semibold text-sm block mb-2 text-white">Choose Date:</label>
+              <input id="apptDate" name="date" type="date" min="{{ nowdate }}" required class="mb-3 border rounded p-2 w-full bg-neutral-950 text-white border-neutral-800"/>
+              <label for="contactMethod" class="font-semibold text-sm block mb-2 text-white">Preferred Contact Method:</label>
+              <select id="contactMethod" name="contactMethod" class="w-full border rounded mb-3 p-2 bg-neutral-950 text-white border-neutral-800">
                 <option value="email">Email</option>
                 <option value="text">Text</option>
               </select>
               <div id="contactInfoContainer">
-                <label for="contactInfo" class="font-semibold text-sm block mb-2">Your Email:</label>
-                <input id="contactInfo" type="email" name="contactInfo" required class="w-full border rounded mb-3 p-2"/>
+                <label for="contactInfo" class="font-semibold text-sm block mb-2 text-white">Your Email:</label>
+                <input id="contactInfo" type="email" name="contactInfo" required class="w-full border rounded mb-3 p-2 bg-neutral-950 text-white border-neutral-800"/>
               </div>
-              <div id="apptDateFeedback" class="text-red-600 text-xs mb-2"></div>
+              <div id="apptDateFeedback" class="text-red-400 text-xs mb-2"></div>
               <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 w-full">Request Booking</button>
-              <div id="apptSubmitFeedback" class="text-green-700 text-xs mt-2"></div>
+              <div id="apptSubmitFeedback" class="text-green-400 text-xs mt-2"></div>
             </form>
           </div>
         </div>
@@ -629,7 +624,7 @@ def property_details(uuid):
       function updateCarousel(index) {
         idx = index;
         imgTag.src = images[idx];
-        dots.forEach((d,i) => d.className = 'block w-2 h-2 rounded-full carousel-dot ' + (i === idx ? 'bg-blue-500' : 'bg-gray-300'));
+        dots.forEach((d,i) => d.className = 'block w-2 h-2 rounded-full carousel-dot ' + (i === idx ? 'bg-blue-500' : 'bg-neutral-700'));
       }
       document.getElementById('carouselPrev').onclick = function() {
         idx = (idx - 1 + images.length) % images.length;
@@ -656,11 +651,11 @@ def property_details(uuid):
       const contactInfoInput = document.getElementById('contactInfo');
       function updateContactInfoField() {
         if (contactMethod.value === "text") {
-          contactInfoContainer.innerHTML = `<label for="contactInfo" class="font-semibold text-sm block mb-2">Your Phone Number:</label>
-            <input id="contactInfo" type="tel" name="contactInfo" required class="w-full border rounded mb-3 p-2"/>`;
+          contactInfoContainer.innerHTML = `<label for="contactInfo" class="font-semibold text-sm block mb-2 text-white">Your Phone Number:</label>
+            <input id="contactInfo" type="tel" name="contactInfo" required class="w-full border rounded mb-3 p-2 bg-neutral-950 text-white border-neutral-800"/>`;
         } else {
-          contactInfoContainer.innerHTML = `<label for="contactInfo" class="font-semibold text-sm block mb-2">Your Email:</label>
-            <input id="contactInfo" type="email" name="contactInfo" required class="w-full border rounded mb-3 p-2"/>`;
+          contactInfoContainer.innerHTML = `<label for="contactInfo" class="font-semibold text-sm block mb-2 text-white">Your Email:</label>
+            <input id="contactInfo" type="email" name="contactInfo" required class="w-full border rounded mb-3 p-2 bg-neutral-950 text-white border-neutral-800"/>`;
         }
       }
       contactMethod.addEventListener("change", updateContactInfoField);
