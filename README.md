@@ -59,7 +59,7 @@ The application will start on `localhost:5000`, and you can access it by navigat
 
 ### Main Branch
 
-The `stable` branch contains the stable version of the application, ready for production use. It is thoroughly tested and validated to ensure a smooth user experience.
+The `main` branch contains the stable version of the application, ready for production use. It is thoroughly tested and validated to ensure a smooth user experience.
 
 ### Developer Branch
 

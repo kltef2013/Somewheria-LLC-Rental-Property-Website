@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>{{ title or 'Somewheria, LLC.' }}</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?display=swap&family=Noto+Sans:wght@400;500;700;900&family=Plus+Jakarta+Sans:wght@400;500;700;800"/>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <script>
+    // Auto-detect system dark mode and apply Tailwind dark class ASAP
+    (function() {
+      try {
+        var darkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (darkMode) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+          if (e.matches) {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        });
+      } catch(e) {}
+    })();
+  </script>
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap");
+    .bar1, .bar2, .bar3 {
+      width: 35px;
+      height: 3px;
+      background-color: #111518;
+      margin: 6px 0;
+      transition: 0.4s;
+    }
+    #hamburger-icon {
+      margin: auto 0;
+      display: none;
+      cursor: pointer;
+    }
+    #hamburger-icon.open .bar1 {
+      -webkit-transform: rotate(-45deg) translate(-6px, 6px);
+      transform: rotate(-45deg) translate(-6px, 6px);
+    }
+    #hamburger-icon.open .bar2 {
+      opacity: 0;
+    }
+    #hamburger-icon.open .bar3 {
+      -webkit-transform: rotate(45deg) translate(-6px, -8px);
+      transform: rotate(45deg) translate(-6px, -8px);
+    }
+    #hamburger-icon .mobile-menu {
+      display: none;
+      position: absolute;
+      top: 50px;
+      left: 0;
+      height: calc(100vh - 50px);
+      width: 100%;
+      background: #fff;
+      color: #111518;
+      transition: background 0.3s, color 0.3s;
+    }
+    #hamburger-icon.open .mobile-menu {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      background: #fff;
+      color: #111518;
+    }
+    .mobile-menu li {
+      margin-bottom: 10px;
+    }
+    .mobile-menu a {
+      transition: color 0.3s, background 0.3s;
+    }
+    @media (prefers-color-scheme: dark) {
+      #hamburger-icon .mobile-menu {
+        background: #18181b !important;
+        color: #fff !important;
+      }
+      #hamburger-icon.open .mobile-menu {
+        background: #18181b !important;
+        color: #fff !important;
+      }
+      .mobile-menu a {
+        color: #fff !important;
+      }
+    }
+    @media only screen and (max-width: 600px) {
+      header nav.desktop-nav {
+        display: none;
+      }
+      #hamburger-icon {
+        display: block;
+      }
+    }
+    @media only screen and (min-width: 601px) {
+      #hamburger-icon {
+        display: none !important;
+      }
+      nav.desktop-nav {
+        display: block !important;
+      }
+    }
+    /* Form transitions */
+    form input, form textarea, form select {
+      transition: background 0.3s, color 0.3s, border-color 0.3s;
+    }
+    form input:focus, form textarea:focus, form select:focus {
+      outline: none;
+      border-color: #2563eb;
+      background: #f3f4f6;
+      color: #111518;
+    }
+    @media (prefers-color-scheme: dark) {
+      form input, form textarea, form select {
+        background: #18181b;
+        color: #fff;
+        border-color: #27272a;
+      }
+      form input:focus, form textarea:focus, form select:focus {
+        background: #27272a;
+        color: #fff;
+        border-color: #2563eb;
+      }
+    }
+  </style>
+</head>
+<body style='font-family:"Plus Jakarta Sans","Noto Sans",sans-serif;'>
+<div class="relative flex min-h-screen flex-col group/design-root overflow-x-hidden bg-neutral-100 dark:bg-neutral-950">
+  <div class="layout-container flex h-full grow flex-col">
+    <header class="flex items-center justify-between border-b px-4 sm:px-6 lg:px-10 py-3 w-full bg-neutral-100 dark:bg-neutral-900" style="position:relative;">
+      <a id="brand" href="{{ url_for('home') }}" class="flex items-center gap-4 text-[#111518] dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 rounded">
+        <div class="size-4">
+          <svg viewBox="0 0 48 48" fill="none"><g clip-path="url(#clip0_6_535)">
+          <path fill-rule="evenodd" clip-rule="evenodd"
+            d="M47.2426 24L24 47.2426L0.757355 24L24 0.757355L47.2426 24ZM12.2426 21H35.7574L24 9.24264L12.2426 21Z"
+            fill="currentColor"></path></g>
+            <defs><clipPath id="clip0_6_535"><rect width="48" height="48" fill="white"/></clipPath></defs>
+          </svg>
+        </div>
+      </a>
+      <nav class="desktop-nav flex-1 hidden sm:block" aria-label="Main navigation">
+        <ul class="flex items-center gap-6 justify-center w-full">
+          <li><a href="{{ url_for('home') }}" class="text-[#111518] dark:text-white text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] dark:hover:bg-neutral-800 hover:rounded hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2">Home</a></li>
+          <li><a href="{{ url_for('for_rent') }}" class="text-[#111518] dark:text-white text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] dark:hover:bg-neutral-800 hover:rounded hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2">For Rent</a></li>
+          <li><a href="{{ url_for('about') }}" class="text-[#111518] dark:text-white text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] dark:hover:bg-neutral-800 hover:rounded hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2">About Us</a></li>
+          <li><a href="{{ url_for('contact') }}" class="text-[#111518] dark:text-white text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] dark:hover:bg-neutral-800 hover:rounded hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2">Contact Us</a></li>
+          {% if session.get('user') %}
+            <li><a href="{{ url_for('manage_listings') }}" class="text-[#111518] dark:text-white text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] dark:hover:bg-neutral-800 hover:rounded hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2">Manage Listings</a></li>
+            <li class="flex items-center gap-2">
+              {% if session.get('user', {}).get('picture') %}
+                <img src="{{ session.get('user', {}).get('picture') }}" alt="Profile" class="w-6 h-6 rounded-full">
+              {% endif %}
+              <span class="text-[#111518] dark:text-white text-sm">{{ session.get('user', {}).get('name', 'User') }}</span>
+            </li>
+            <li><a href="{{ url_for('logout') }}" class="text-[#111518] dark:text-white text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] dark:hover:bg-neutral-800 hover:rounded hover:text-red-600 dark:hover:text-red-400 px-3 py-2">Logout</a></li>
+          {% else %}
+            <li><a href="{{ url_for('login') }}" class="text-[#111518] dark:text-white text-sm font-medium leading-normal transition hover:bg-[#EAEDF1] dark:hover:bg-neutral-800 hover:rounded hover:text-blue-600 dark:hover:text-blue-400 px-3 py-2">Login</a></li>
+          {% endif %}
+        </ul>
+      </nav>
+      <div class="flex flex-1 justify-end items-center">
+        <div id="hamburger-icon" onclick="toggleMobileMenu(this)" aria-label="Open menu" tabindex="0" style="margin-left:auto;">
+          <div class="bar1"></div>
+          <div class="bar2"></div>
+          <div class="bar3"></div>
+          <ul class="mobile-menu bg-white text-[#111518] dark:bg-neutral-900 dark:text-white">
+            <li><a href="{{ url_for('home') }}" class="text-[#111518] dark:text-white">Home</a></li>
+            <li><a href="{{ url_for('for_rent') }}" class="text-[#111518] dark:text-white">For Rent</a></li>
+            <li><a href="{{ url_for('about') }}" class="text-[#111518] dark:text-white">About Us</a></li>
+            <li><a href="{{ url_for('contact') }}" class="text-[#111518] dark:text-white">Contact Us</a></li>
+            {% if session.get('user') %}
+              <li><a href="{{ url_for('manage_listings') }}" class="text-[#111518] dark:text-white">Manage Listings</a></li>
+              <li class="flex items-center gap-2 justify-center py-2">
+                {% if session.get('user', {}).get('picture') %}
+                  <img src="{{ session.get('user', {}).get('picture') }}" alt="Profile" class="w-6 h-6 rounded-full">
+                {% endif %}
+                <span class="text-[#111518] dark:text-white text-sm">{{ session.get('user', {}).get('name', 'User') }}</span>
+              </li>
+              <li><a href="{{ url_for('logout') }}" class="text-[#111518] dark:text-white">Logout</a></li>
+            {% else %}
+              <li><a href="{{ url_for('login') }}" class="text-[#111518] dark:text-white">Login</a></li>
+            {% endif %}
+          </ul>
+        </div>
+      </div>
+    </header>
+    <script>
+      function toggleMobileMenu(menu) {
+        menu.classList.toggle('open');
+      }
+    </script>
+    <main class="flex-1 bg-neutral-100 text-[#111518] dark:bg-neutral-950 dark:text-white">{% block content %}{% endblock %}</main>
+    <footer class="py-5 text-center bg-gray-100 text-gray-600 dark:bg-neutral-900 dark:text-gray-300">
+      <p class="mb-2">&copy; 2024/25 Somewheria, LLC. All Rights Reserved.</p>
+      <div>
+        <a href="{{ url_for('report_issue_form') }}" class="text-blue-600 dark:text-blue-400 underline text-sm">Report an issue</a>
+      </div>
+    </footer>
+  </div>
+</div>
+</body>
+</html>
