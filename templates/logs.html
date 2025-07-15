@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="px-4 sm:px-8 md:px-16 lg:px-24 py-10 max-w-full sm:max-w-3xl mx-auto">
+  <h2 class="text-2xl font-bold mb-6">Application Logs</h2>
+  <div class="mb-4 flex items-center gap-3">
+    <input id="logSearch" type="text" placeholder="Search logs..." class="border rounded p-2 w-full max-w-xs" />
+    <button onclick="location.reload()" class="bg-blue-500 text-white px-3 py-2 rounded hover:bg-blue-600">Refresh</button>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-sm border rounded shadow">
+      <thead class="bg-gray-100">
+        <tr>
+          <th class="px-3 py-2 text-left">Timestamp</th>
+          <th class="px-3 py-2 text-left">Level</th>
+          <th class="px-3 py-2 text-left">Message</th>
+        </tr>
+      </thead>
+      <tbody id="logTableBody">
+        {% for entry in log_entries %}
+        <tr class="{% if entry.level.strip() == 'ERROR' %}bg-red-50{% elif entry.level.strip() == 'WARNING' %}bg-yellow-50{% elif entry.level.strip() == 'INFO' %}bg-blue-50{% endif %}">
+          <td class="px-3 py-2 whitespace-nowrap">{{ entry.timestamp }}</td>
+          <td class="px-3 py-2">
+            <span class="px-2 py-1 rounded text-xs font-bold {% if entry.level.strip() == 'ERROR' %}bg-red-500 text-white{% elif entry.level.strip() == 'WARNING' %}bg-yellow-400 text-black{% elif entry.level.strip() == 'INFO' %}bg-blue-400 text-white{% else %}bg-gray-300 text-black{% endif %}">{{ entry.level }}</span>
+          </td>
+          <td class="px-3 py-2">{{ entry.message }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if not log_entries %}
+      <div class="text-gray-500 py-8 text-center">No logs available.</div>
+    {% endif %}
+  </div>
+</div>
+<script>
+// Simple client-side search
+// ...existing code...
+</script>
+{% endblock %}

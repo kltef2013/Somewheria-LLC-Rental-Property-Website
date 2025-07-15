@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="px-4 sm:px-8 md:px-16 lg:px-24 py-6 sm:py-10 md:py-12">
+    <h2 class="text-2xl font-bold mb-8">Available Properties</h2>
+    {% if not properties %}
+        <div class="text-center text-gray-500 py-10">Loading properties, please try again in a moment.</div>
+    {% else %}
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+    {% for prop in properties %}
+        <div class="rounded shadow p-4 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800">
+            <a href="{{ url_for('property_details', uuid=prop.id) }}">
+                <img src="{{ prop.thumbnail }}" alt="Property Image" class="rounded mb-3 w-full h-48 object-cover bg-neutral-100 dark:bg-neutral-950" />
+                <div class="font-bold text-lg text-[#111518] dark:text-white">{{ prop.name }}</div>
+                <div class="text-gray-600 dark:text-gray-300">{{ prop.address }}</div>
+                <div class="mt-2 text-blue-800 dark:text-blue-400 font-semibold">${{ prop.rent }}/mo</div>
+            </a>
+            <div class="mt-3">
+                <a href="{{ url_for('property_details', uuid=prop.id) }}"
+                class="underline text-blue-600 dark:text-blue-400">Details</a>
+            </div>
+        </div>
+    {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+<script>
+// Property change detection logic
+(function() {
+  const STORAGE_KEY = "property_snapshot";
+  // Helper: deep compare two objects (shallow for arrays of objects)
+  function diffProperties(oldList, newList) {
+    const oldMap = {};
+    oldList.forEach(p => oldMap[p.id] = p);
+    const newMap = {};
+    newList.forEach(p => newMap[p.id] = p);
+    const changes = [];
+    for (const id in newMap) {
+      if (!oldMap[id]) {
+        changes.push({ id, type: "added", new: newMap[id] });
+        continue;
+      }
+      const diffs = [];
+      for (const key of Object.keys(newMap[id])) {
+        if (typeof newMap[id][key] === "object") continue; // skip nested
+        if (oldMap[id][key] !== newMap[id][key]) {
+          diffs.push({
+            field: key,
+            old: oldMap[id][key],
+            new: newMap[id][key]
+          });
+        }
+      }
+      if (diffs.length) {
+        changes.push({ id, type: "changed", diffs });
+      }
+    }
+    for (const id in oldMap) {
+      if (!newMap[id]) {
+        changes.push({ id, type: "removed", old: oldMap[id] });
+      }
+    }
+    return changes;
+  }
+  // Fetch latest properties from API
+  fetch("/for-rent.json")
+    .then(resp => resp.json())
+    .then(newProps => {
+      let oldProps = [];
+      try {
+        oldProps = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+      } catch {}
+      const changes = diffProperties(oldProps, newProps);
+      if (changes.length === 0) {
+        console.log("[Property Check] No changes detected in property data.");
+      } else {
+        console.group("[Property Check] Changes detected in property data:");
+        changes.forEach(change => {
+          if (change.type === "added") {
+            console.log(`+ Property added: ID ${change.id}`, change.new);
+          } else if (change.type === "removed") {
+            console.log(`- Property removed: ID ${change.id}`, change.old);
+          } else if (change.type === "changed") {
+            console.group(`~ Property changed: ID ${change.id}`);
+            console.table(change.diffs.map(d => ({
+              Field: d.field,
+              "Old Value": d.old,
+              "New Value": d.new
+            })));
+            console.groupEnd();
+          }
+        });
+        console.groupEnd();
+      }
+      // Save new snapshot
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(newProps));
+    })
+    .catch(e => {
+      console.warn("[Property Check] Could not fetch property data for change detection.", e);
+    });
+})();
+</script>

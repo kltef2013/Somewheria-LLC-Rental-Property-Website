@@ -1,0 +1,341 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="px-4 sm:px-8 md:px-16 lg:px-24 flex flex-col items-center py-7 bg-white dark:bg-neutral-950">
+  <div class="max-w-[960px] w-full relative">
+    <div class="bg-white dark:bg-neutral-900 rounded-xl mb-5 relative">
+      <!-- Carousel -->
+      <div class="relative flex justify-center items-center" style="height: 360px; overflow:hidden;">
+        {% set image_count = property.photos | length %}
+        <img 
+          id="carouselImg" 
+          src="{{ property.thumbnail }}" 
+          alt="Property Image" 
+          class="rounded object-cover w-full h-80 transition-all duration-300 bg-neutral-100 dark:bg-neutral-950"
+          style="max-height: 340px;"
+        />
+        <button id="carouselPrev" class="absolute left-1 top-1/2 -translate-y-1/2 px-2 py-2 rounded-full bg-neutral-200 dark:bg-neutral-800 hover:bg-blue-100 dark:hover:bg-blue-900 text-[#111518] dark:text-white" style="z-index:15;">
+          &#8249;
+        </button>
+        <button id="carouselNext" class="absolute right-1 top-1/2 -translate-y-1/2 px-2 py-2 rounded-full bg-neutral-200 dark:bg-neutral-800 hover:bg-blue-100 dark:hover:bg-blue-900 text-[#111518] dark:text-white" style="z-index:15;">
+          &#8250;
+        </button>
+        <div class="absolute bottom-2 right-5 flex gap-1">
+          {% for idx in range(image_count) %}
+            <span class="block w-2 h-2 rounded-full {% if idx==0 %}bg-blue-500{% else %}bg-neutral-300 dark:bg-neutral-700{% endif %} carousel-dot" data-idx="{{ idx }}"></span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <!-- Main content -->
+    <h1 class="text-[#111518] dark:text-white text-[22px] font-bold tracking-tight px-4 pb-3 pt-5">{{ property.name }}</h1>
+    <p class="text-[#111518] dark:text-white text-base pb-3 pt-1 px-4">{{ property.blurb }}</p>
+    <h2 class="text-[#111518] dark:text-white text-[22px] font-bold px-4 pb-3 pt-5">Property Details</h2>
+    <div class="p-4 grid grid-cols-2">
+      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pr-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Address</p><p class="text-[#111518] dark:text-white text-sm">{{ property.address }}</p></div>
+      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pl-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Rent</p><p class="text-[#111518] dark:text-white text-sm">${{ property.rent }}/month</p></div>
+      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pr-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Deposit</p><p class="text-[#111518] dark:text-white text-sm">${{ property.deposit }}</p></div>
+      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pl-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Square Footage</p><p class="text-[#111518] dark:text-white text-sm">{{ property.sqft }} sq ft</p></div>
+      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pr-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Bedrooms</p><p class="text-[#111518] dark:text-white text-sm">{{ property.bedrooms }}</p></div>
+      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pl-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Bathrooms</p><p class="text-[#111518] dark:text-white text-sm">{{ property.bathrooms }}</p></div>
+      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pr-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Lease Term</p><p class="text-[#111518] dark:text-white text-sm">{{ property.lease_length }}</p></div>
+      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pl-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Amenities</p><p class="text-[#111518] dark:text-white text-sm">{{ property.included_amenities|join(', ') }}</p></div>
+      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pr-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Pets Allowed</p>
+        <p class="text-[#111518] dark:text-white text-sm">
+          {% if property.pets_allowed is defined %}
+            {{ property.pets_allowed }}
+          {% else %}
+            Unknown
+          {% endif %}
+        </p>
+      </div>
+    </div>
+    <h2 class="text-[#111518] dark:text-white text-[22px] font-bold px-4 pb-3 pt-5">Description</h2>
+    <p class="text-[#111518] dark:text-white text-base pb-3 pt-1 px-4">{{ property.description or property.blurb }}</p>
+    <!-- Request Appointment Button -->
+    <div class="px-4 pt-6 flex justify-end">
+      <button id="openCalModal" class="bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 font-bold shadow">
+        Request Appointment
+      </button>
+    </div>
+    <!-- Calendar Modal -->
+    <div id="calModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 hidden">
+      <div class="bg-white dark:bg-neutral-900 rounded p-6 w-full max-w-[370px] shadow">
+        <div class="flex justify-between items-center mb-5">
+          <div class="text-lg font-bold text-[#111518] dark:text-white">Request an Appointment</div>
+          <button onclick="closeCalModal()" class="bg-neutral-200 dark:bg-neutral-800 rounded px-2 py-1 text-lg leading-none text-[#111518] dark:text-white">&times;</button>
+        </div>
+        <form id="apptForm">
+          <label for="apptName" class="font-semibold text-sm text-[#111518] dark:text-white">Your Name:</label>
+          <input id="apptName" type="text" required class="w-full border rounded mb-3 p-2 bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800"/>
+          <label class="font-semibold text-sm block mb-2 text-[#111518] dark:text-white">Choose Date:</label>
+          <input id="apptDate" name="date" type="date" min="{{ nowdate }}" required class="mb-3 border rounded p-2 w-full bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800"/>
+          <label for="contactMethod" class="font-semibold text-sm block mb-2 text-[#111518] dark:text-white">Preferred Contact Method:</label>
+          <select id="contactMethod" name="contactMethod" class="w-full border rounded mb-3 p-2 bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800">
+            <option value="email">Email</option>
+            <option value="text">Text</option>
+          </select>
+          <div id="contactInfoContainer">
+            <label for="contactInfo" class="font-semibold text-sm block mb-2 text-[#111518] dark:text-white">Your Email:</label>
+            <input id="contactInfo" type="email" name="contactInfo" required class="w-full border rounded mb-3 p-2 bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800"/>
+          </div>
+          <div id="apptDateFeedback" class="text-red-400 text-xs mb-2"></div>
+          <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 w-full">Request Booking</button>
+          <div id="apptSubmitFeedback" class="text-green-400 text-xs mt-2"></div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Carousel with swipe support
+  // eslint-disable-next-line
+  var photos = JSON.parse('{{ (property.photos or [])|tojson|safe }}');
+  let currentIdx = 0;
+  const imgEl = document.getElementById('carouselImg');
+  const prevBtn = document.getElementById('carouselPrev');
+  const nextBtn = document.getElementById('carouselNext');
+  const dots = document.querySelectorAll('.carousel-dot');
+  
+  // Touch/swipe variables
+  let startX = 0;
+  let endX = 0;
+  let isDragging = false;
+  
+  function updateCarousel() {
+    if (photos.length === 0) return;
+    
+    const photo = photos[currentIdx];
+    if (photo && photo.startsWith('data:image')) {
+      imgEl.src = photo;
+    } else if (photo) {
+      imgEl.src = photo;
+    }
+    
+    // Update dots
+    dots.forEach((dot, idx) => {
+      dot.classList.toggle('bg-blue-500', idx === currentIdx);
+      dot.classList.toggle('bg-neutral-300', idx !== currentIdx);
+      dot.classList.toggle('dark:bg-neutral-700', idx !== currentIdx);
+    });
+    
+    // Update button states
+    prevBtn.style.display = currentIdx === 0 ? 'none' : 'block';
+    nextBtn.style.display = currentIdx === photos.length - 1 ? 'none' : 'block';
+  }
+  
+  function nextSlide() {
+    if (currentIdx < photos.length - 1) {
+      currentIdx++;
+      updateCarousel();
+    }
+  }
+  
+  function prevSlide() {
+    if (currentIdx > 0) {
+      currentIdx--;
+      updateCarousel();
+    }
+  }
+  
+  // Button event listeners
+  if (prevBtn) prevBtn.addEventListener('click', prevSlide);
+  if (nextBtn) nextBtn.addEventListener('click', nextSlide);
+  
+  // Dot navigation
+  dots.forEach((dot, idx) => {
+    dot.addEventListener('click', () => {
+      currentIdx = idx;
+      updateCarousel();
+    });
+  });
+  
+  // Touch/swipe support
+  if (imgEl) {
+    imgEl.addEventListener('touchstart', (e) => {
+      startX = e.touches[0].clientX;
+      isDragging = true;
+    });
+    
+    imgEl.addEventListener('touchmove', (e) => {
+      if (!isDragging) return;
+      e.preventDefault();
+      endX = e.touches[0].clientX;
+    });
+    
+    imgEl.addEventListener('touchend', () => {
+      if (!isDragging) return;
+      isDragging = false;
+      
+      const diffX = startX - endX;
+      const threshold = 50;
+      
+      if (Math.abs(diffX) > threshold) {
+        if (diffX > 0) {
+          nextSlide();
+        } else {
+          prevSlide();
+        }
+      }
+    });
+    
+    // Mouse drag support
+    imgEl.addEventListener('mousedown', (e) => {
+      startX = e.clientX;
+      isDragging = true;
+    });
+    
+    imgEl.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      endX = e.clientX;
+    });
+    
+    imgEl.addEventListener('mouseup', () => {
+      if (!isDragging) return;
+      isDragging = false;
+      
+      const diffX = startX - endX;
+      const threshold = 50;
+      
+      if (Math.abs(diffX) > threshold) {
+        if (diffX > 0) {
+          nextSlide();
+        } else {
+          prevSlide();
+        }
+      }
+    });
+    
+    imgEl.addEventListener('mouseleave', () => {
+      isDragging = false;
+    });
+  }
+  
+  // Keyboard navigation
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft') {
+      prevSlide();
+    } else if (e.key === 'ArrowRight') {
+      nextSlide();
+    }
+  });
+  
+  // Initialize carousel
+  updateCarousel();
+  
+  // Modal functionality
+  const modal = document.getElementById('calModal');
+  const openBtn = document.getElementById('openCalModal');
+  const closeBtn = modal.querySelector('button[onclick="closeCalModal()"]');
+  const form = document.getElementById('apptForm');
+  const contactMethod = document.getElementById('contactMethod');
+  const contactInfoContainer = document.getElementById('contactInfoContainer');
+  const contactInfo = document.getElementById('contactInfo');
+  const dateInput = document.getElementById('apptDate');
+  const dateFeedback = document.getElementById('apptDateFeedback');
+  const submitFeedback = document.getElementById('apptSubmitFeedback');
+  
+  // Booked dates from server
+  // eslint-disable-next-line
+  const bookedDates = JSON.parse('{{ booked_dates|tojson|safe }}');
+  
+  function openCalModal() {
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+  
+  function closeCalModal() {
+    modal.classList.add('hidden');
+    document.body.style.overflow = 'auto';
+    form.reset();
+    dateFeedback.textContent = '';
+    submitFeedback.textContent = '';
+  }
+  
+  // Event listeners
+  if (openBtn) openBtn.addEventListener('click', openCalModal);
+  if (closeBtn) closeBtn.addEventListener('click', closeCalModal);
+  
+  // Close modal when clicking outside
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      closeCalModal();
+    }
+  });
+  
+  // Contact method change
+  if (contactMethod) {
+    contactMethod.addEventListener('change', function() {
+      const label = contactInfoContainer.querySelector('label');
+      const input = contactInfo;
+      
+      if (this.value === 'email') {
+        label.textContent = 'Your Email:';
+        input.type = 'email';
+        input.placeholder = 'Enter your email';
+      } else {
+        label.textContent = 'Your Phone:';
+        input.type = 'tel';
+        input.placeholder = 'Enter your phone number';
+      }
+    });
+  }
+  
+  // Date validation
+  if (dateInput) {
+    dateInput.addEventListener('change', function() {
+      const selectedDate = this.value;
+      dateFeedback.textContent = '';
+      
+      if (bookedDates.includes(selectedDate)) {
+        dateFeedback.textContent = 'This date is already booked. Please select another date.';
+        this.setCustomValidity('Date is already booked');
+      } else {
+        this.setCustomValidity('');
+      }
+    });
+  }
+  
+  // Form submission
+  if (form) {
+    form.addEventListener('submit', function(e) {
+      e.preventDefault();
+      
+      const formData = {
+        name: document.getElementById('apptName').value,
+        date: dateInput.value,
+        contact_method: contactMethod.value,
+        contact_info: contactInfo.value
+      };
+      
+      fetch('/property/{{ property.id }}/schedule', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData)
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          submitFeedback.textContent = 'Appointment request sent successfully!';
+          submitFeedback.className = 'text-green-400 text-xs mt-2';
+          form.reset();
+          setTimeout(() => {
+            closeCalModal();
+          }, 2000);
+        } else {
+          submitFeedback.textContent = data.error || 'Failed to send request. Please try again.';
+          submitFeedback.className = 'text-red-400 text-xs mt-2';
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        submitFeedback.textContent = 'An error occurred. Please try again.';
+        submitFeedback.className = 'text-red-400 text-xs mt-2';
+      });
+    });
+  }
+});
+</script>
+{% endblock %}
