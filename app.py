@@ -5,37 +5,202 @@ import secrets
 import logging
 import requests
 import smtplib
+import json
 from io import BytesIO
 from PIL import Image, ImageOps
 from email.message import EmailMessage
-from flask import Flask, jsonify, render_template_string, request, g, url_for
+from flask import Flask, jsonify, render_template_string, request, g, url_for, redirect, session
 from dotenv import load_dotenv
+from google_auth_oauthlib.flow import Flow
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 load_dotenv()
 app = Flask(__name__)
+app.secret_key = os.getenv('SECRET_KEY', secrets.token_hex(32))
+
+# Google OAuth Configuration
+GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
+GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET')
+GOOGLE_REDIRECT_URI = os.getenv('GOOGLE_REDIRECT_URI', 'http://localhost:5000/google/callback')
+
+# Authorized users whitelist (comma-separated email addresses)
+AUTHORIZED_USERS = os.getenv('AUTHORIZED_USERS', '').split(',')
+AUTHORIZED_USERS = [email.strip().lower() for email in AUTHORIZED_USERS if email.strip()]
+
+# Disable HTTPS requirement for local development
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
+# User session management
+def is_logged_in():
+    return 'user' in session
+
+def get_current_user():
+    return session.get('user')
+
+def is_whitelist_configured():
+    """Check if authorized users whitelist is configured"""
+    return len(AUTHORIZED_USERS) > 0
+
+def login_required(f):
+    from functools import wraps
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not is_logged_in():
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+# Custom 404 error handler
+@app.errorhandler(404)
+def page_not_found(e):
+    return render_template("404.html", title="Page Not Found"), 404
+
+# Edit Listing route
+@app.route("/edit-listing/<property_id>")
+@login_required
+def edit_listing(property_id):
+    with cache_lock:
+        property_data = next((p for p in properties_cache if p.get("id") == property_id), None)
+    if not property_data:
+        return "Property not found", 404
+    return render_template("edit_listing.html", property_id=property_id, property=property_data, user=get_current_user())
+
+# ...existing code...
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if is_logged_in():
+        return redirect(url_for("manage_listings"))
+    
+    if request.method == "POST":
+        return redirect(url_for("manage_listings"))
+    
+    return render_template("login.html", title="Login", whitelist_configured=is_whitelist_configured())
+
+@app.route("/google/login")
+def google_login():
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        return "Google OAuth not configured", 500
+    
+    flow = Flow.from_client_config(
+        {
+            "web": {
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [GOOGLE_REDIRECT_URI]
+            }
+        },
+        scopes=['openid', 'https://www.googleapis.com/auth/userinfo.profile', 'https://www.googleapis.com/auth/userinfo.email']
+    )
+    
+    flow.redirect_uri = GOOGLE_REDIRECT_URI
+    authorization_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true'
+    )
+    
+    session['state'] = state
+    return redirect(authorization_url)
+
+@app.route("/google/callback")
+def google_callback():
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        return "Google OAuth not configured", 500
+    
+    try:
+        flow = Flow.from_client_config(
+            {
+                "web": {
+                    "client_id": GOOGLE_CLIENT_ID,
+                    "client_secret": GOOGLE_CLIENT_SECRET,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": [GOOGLE_REDIRECT_URI]
+                }
+            },
+            scopes=['openid', 'https://www.googleapis.com/auth/userinfo.profile', 'https://www.googleapis.com/auth/userinfo.email']
+        )
+        
+        flow.redirect_uri = GOOGLE_REDIRECT_URI
+        
+        authorization_response = request.url
+        flow.fetch_token(authorization_response=authorization_response)
+        
+        credentials = flow.credentials
+        id_info = id_token.verify_oauth2_token(
+            credentials.id_token, google_requests.Request(), GOOGLE_CLIENT_ID
+        )
+        
+        user_email = id_info['email'].lower()
+        
+        # Check if user is authorized
+        if AUTHORIZED_USERS and user_email not in AUTHORIZED_USERS:
+            error_message = f"Unauthorized access attempt by: {user_email}"
+            log_and_notify_error("Unauthorized Login Attempt", error_message)
+            return render_template("login.html", title="Login", error="Access denied. Your email is not authorized to use this application.")
+        
+        # Store user information in session
+        session['user'] = {
+            'id': id_info['sub'],
+            'email': id_info['email'],
+            'name': id_info.get('name', ''),
+            'picture': id_info.get('picture', ''),
+            'given_name': id_info.get('given_name', ''),
+            'family_name': id_info.get('family_name', '')
+        }
+        
+        # Log successful login
+        success_message = f"Successful login by: {user_email}"
+        print(f"[AUTH] {success_message}")
+        
+        return redirect(url_for("manage_listings"))
+    except Exception as e:
+        error_message = f"Google OAuth callback error: {str(e)}"
+        log_and_notify_error("Google OAuth Error", error_message)
+        return render_template("login.html", title="Login", error="Authentication failed. Please try again.")
+
+@app.route("/logout")
+def logout():
+    session.pop('user', None)
+    return redirect(url_for('home'))
+
+@app.route("/auth/status")
+def auth_status():
+    """Check authentication status - useful for debugging"""
+    if is_logged_in():
+        user = get_current_user()
+        return jsonify({
+            'authenticated': True,
+            'user': {
+                'id': user['id'],
+                'email': user['email'],
+                'name': user['name'],
+                'picture': user.get('picture', '')
+            }
+        })
+    else:
+        return jsonify({
+            'authenticated': False,
+            'user': None
+        })
+
+# Route for Manage Listings page
+@app.route("/manage-listings")
+@login_required
+def manage_listings():
+    with cache_lock:
+        properties = list(properties_cache)
+    return render_template("manage_listings.html", title="Manage Listings", properties=properties, user=get_current_user())
+## ...existing code...
 @app.route("/report-issue-complete")
 def report_issue_complete():
-    issue_text_html = """
-    {% block content %}
-    <div class='px-4 sm:px-8 md:px-16 lg:px-24 py-10 max-w-full sm:max-w-2xl mx-auto'>
-      <h2 class='text-2xl font-bold mb-6 text-[#111518] dark:text-white text-center drop-shadow-lg'>Report an Issue</h2>
-      <div class="bg-green-100 text-green-800 font-bold px-6 py-5 rounded mb-8 text-center">
-        Thank you for your report!
-      </div>
-      <form action="{{ url_for('report_issue') }}" method="POST" class="bg-white dark:bg-neutral-900 rounded shadow p-6">
-        <div class="mb-4">
-          <label for="name" class="block text-sm font-semibold text-[#111518] dark:text-white mb-2">Your Name</label>
-          <input type="text" id="name" name="name" required class="w-full p-2 border rounded bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800" />
-        </div>
-        <div class="mb-4">
-          <label for="description" class="block text-sm font-semibold text-[#111518] dark:text-white mb-2">Issue Description</label>
-          <textarea id="description" name="description" rows="5" required class="w-full p-2 border rounded bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800"></textarea>
-        </div>
-        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-bold shadow">Submit Issue</button>
-      </form>
-    </div>
-    {% endblock %}
-    """
-    return render_template_string(SHELL.replace("{% block content %}{% endblock %}", issue_text_html), title="Report an Issue")
+    return render_template(
+        "report_issue.html",
+        title="Report an Issue",
+        confirmation=True
+    )
 LOG_FILE = "application.log"
 logging.basicConfig(
     filename=LOG_FILE,
@@ -349,23 +514,12 @@ SHELL = '''
 '''
 import datetime
 property_appointments = load_appointments()
+from flask import render_template
+
 @app.route('/')
 def home():
     try:
-        return render_template_string(SHELL.replace(
-            "{% block content %}{% endblock %}",
-            """
-            {% block content %}
-<div class="px-4 sm:px-8 md:px-16 lg:px-24 py-6 sm:py-10 md:py-12 max-w-full sm:max-w-2xl mx-auto">
-                <h1 class="text-3xl font-bold mb-4">Welcome to Somewheria, LLC.</h1>
-                <p class="mb-6">Find your next rental in style and comfort.</p>
-                <a class="bg-blue-600 hover:bg-blue-800 text-white px-6 py-3 rounded" href="{{ url_for('for_rent') }}">
-                    View Properties
-                </a>
-            </div>
-            {% endblock %}
-            """
-        ), title="Home")
+        return render_template("home.html", title="Home")
     except Exception as e:
         print(f"[home error] {e}")
         return "Internal server error", 500
@@ -456,112 +610,7 @@ def for_rent():
     # Use cache only, never block for refresh
     with cache_lock:
         properties = list(properties_cache)
-    rent_html = """
-    {% block content %}
-<div class="px-4 sm:px-8 md:px-16 lg:px-24 py-6 sm:py-10 md:py-12">
-        <h2 class="text-2xl font-bold mb-8">Available Properties</h2>
-        {% if not properties %}
-            <div class="text-center text-gray-500 py-10">Loading properties, please try again in a moment.</div>
-        {% else %}
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {% for prop in properties %}
-            <div class="rounded shadow p-4 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800">
-                <a href="{{ url_for('property_details', uuid=prop.id) }}">
-                    <img src="{{ prop.thumbnail }}" alt="Property Image" class="rounded mb-3 w-full h-48 object-cover bg-neutral-100 dark:bg-neutral-950" />
-                    <div class="font-bold text-lg text-[#111518] dark:text-white">{{ prop.name }}</div>
-                    <div class="text-gray-600 dark:text-gray-300">{{ prop.address }}</div>
-                    <div class="mt-2 text-blue-800 dark:text-blue-400 font-semibold">${{ prop.rent }}/mo</div>
-                </a>
-                <div class="mt-3">
-                    <a href="{{ url_for('property_details', uuid=prop.id) }}"
-                    class="underline text-blue-600 dark:text-blue-400">Details</a>
-                </div>
-            </div>
-        {% endfor %}
-        </div>
-        {% endif %}
-    </div>
-    {% endblock %}
-    <script>
-    // Property change detection logic
-    (function() {
-      const STORAGE_KEY = "property_snapshot";
-      // Helper: deep compare two objects (shallow for arrays of objects)
-      function diffProperties(oldList, newList) {
-        const oldMap = {};
-        oldList.forEach(p => oldMap[p.id] = p);
-        const newMap = {};
-        newList.forEach(p => newMap[p.id] = p);
-        const changes = [];
-        for (const id in newMap) {
-          if (!oldMap[id]) {
-            changes.push({ id, type: "added", new: newMap[id] });
-            continue;
-          }
-          const diffs = [];
-          for (const key of Object.keys(newMap[id])) {
-            if (typeof newMap[id][key] === "object") continue; // skip nested
-            if (oldMap[id][key] !== newMap[id][key]) {
-              diffs.push({
-                field: key,
-                old: oldMap[id][key],
-                new: newMap[id][key]
-              });
-            }
-          }
-          if (diffs.length) {
-            changes.push({ id, type: "changed", diffs });
-          }
-        }
-        for (const id in oldMap) {
-          if (!newMap[id]) {
-            changes.push({ id, type: "removed", old: oldMap[id] });
-          }
-        }
-        return changes;
-      }
-      // Fetch latest properties from API
-      fetch("/for-rent.json")
-        .then(resp => resp.json())
-        .then(newProps => {
-          let oldProps = [];
-          try {
-            oldProps = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-          } catch {}
-          const changes = diffProperties(oldProps, newProps);
-          if (changes.length === 0) {
-            console.log("[Property Check] No changes detected in property data.");
-          } else {
-            console.group("[Property Check] Changes detected in property data:");
-            changes.forEach(change => {
-              if (change.type === "added") {
-                console.log(`+ Property added: ID ${change.id}`, change.new);
-              } else if (change.type === "removed") {
-                console.log(`- Property removed: ID ${change.id}`, change.old);
-              } else if (change.type === "changed") {
-                console.group(`~ Property changed: ID ${change.id}`);
-                console.table(change.diffs.map(d => ({
-                  Field: d.field,
-                  "Old Value": d.old,
-                  "New Value": d.new
-                })));
-                console.groupEnd();
-              }
-            });
-            console.groupEnd();
-          }
-          // Save new snapshot
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(newProps));
-        })
-        .catch(e => {
-          console.warn("[Property Check] Could not fetch property data for change detection.", e);
-        });
-    })();
-    </script>
-    """
-    return render_template_string(SHELL.replace("{% block content %}{% endblock %}", rent_html),
-            properties=properties, title="For Rent"
-    )
+    return render_template("for_rent.html", properties=properties, title="For Rent")
 
 @app.route("/for-rent.json")
 def for_rent_json():
@@ -577,280 +626,48 @@ def for_rent_json():
     return jsonify([make_serializable(p) for p in properties])
 @app.route("/property/<uuid>")
 def property_details(uuid):
-    # Use cache for property details
-    with cache_lock:
-        property_info = next((p for p in properties_cache if p.get("id") == uuid), None)
-    if not property_info:
-        return "Property not found", 404
-    global property_appointments
-    property_appointments = load_appointments()
-    booked_dates = sorted(list(property_appointments.get(uuid, set())))
-    nowdate = datetime.date.today().strftime("%Y-%m-%d")
-    detail_html = """
-    {% block content %}
-<div class="px-4 sm:px-8 md:px-16 lg:px-24 flex flex-col items-center py-7 bg-white dark:bg-neutral-950">
-  <div class="max-w-[960px] w-full relative">
-    <div class="bg-white dark:bg-neutral-900 rounded-xl mb-5 relative">
-      <!-- Carousel -->
-      <div class="relative flex justify-center items-center" style="height: 360px; overflow:hidden;">
-        {% set image_count = property.photos | length %}
-        <img 
-          id="carouselImg" 
-          src="{{ property.thumbnail }}" 
-          alt="Property Image" 
-          class="rounded object-cover w-full h-80 transition-all duration-300 bg-neutral-100 dark:bg-neutral-950"
-          style="max-height: 340px;"
-        />
-        <button id="carouselPrev" class="absolute left-1 top-1/2 -translate-y-1/2 px-2 py-2 rounded-full bg-neutral-200 dark:bg-neutral-800 hover:bg-blue-100 dark:hover:bg-blue-900 text-[#111518] dark:text-white" style="z-index:15;">
-          &#8249;
-        </button>
-        <button id="carouselNext" class="absolute right-1 top-1/2 -translate-y-1/2 px-2 py-2 rounded-full bg-neutral-200 dark:bg-neutral-800 hover:bg-blue-100 dark:hover:bg-blue-900 text-[#111518] dark:text-white" style="z-index:15;">
-          &#8250;
-        </button>
-        <div class="absolute bottom-2 right-5 flex gap-1">
-          {% for idx in range(image_count) %}
-            <span class="block w-2 h-2 rounded-full {% if idx==0 %}bg-blue-500{% else %}bg-neutral-300 dark:bg-neutral-700{% endif %} carousel-dot" data-idx="{{ idx }}"></span>
-          {% endfor %}
-        </div>
-      </div>
-    </div>
-    <!-- Main content -->
-    <h1 class="text-[#111518] dark:text-white text-[22px] font-bold tracking-tight px-4 pb-3 pt-5">{{ property.name }}</h1>
-    <p class="text-[#111518] dark:text-white text-base pb-3 pt-1 px-4">{{ property.blurb }}</p>
-    <h2 class="text-[#111518] dark:text-white text-[22px] font-bold px-4 pb-3 pt-5">Property Details</h2>
-    <div class="p-4 grid grid-cols-2">
-      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pr-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Address</p><p class="text-[#111518] dark:text-white text-sm">{{ property.address }}</p></div>
-      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pl-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Rent</p><p class="text-[#111518] dark:text-white text-sm">${{ property.rent }}/month</p></div>
-      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pr-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Deposit</p><p class="text-[#111518] dark:text-white text-sm">${{ property.deposit }}</p></div>
-      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pl-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Square Footage</p><p class="text-[#111518] dark:text-white text-sm">{{ property.sqft }} sq ft</p></div>
-      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pr-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Bedrooms</p><p class="text-[#111518] dark:text-white text-sm">{{ property.bedrooms }}</p></div>
-      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pl-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Bathrooms</p><p class="text-[#111518] dark:text-white text-sm">{{ property.bathrooms }}</p></div>
-      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pr-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Lease Term</p><p class="text-[#111518] dark:text-white text-sm">{{ property.lease_length }}</p></div>
-      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pl-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Amenities</p><p class="text-[#111518] dark:text-white text-sm">{{ property.included_amenities|join(', ') }}</p></div>
-      <div class="flex flex-col gap-1 border-t border-neutral-200 dark:border-neutral-800 py-4 pr-2"><p class="text-gray-600 dark:text-neutral-400 text-sm">Pets Allowed</p>
-        <p class="text-[#111518] dark:text-white text-sm">
-          {% if property.pets_allowed is defined %}
-            {{ property.pets_allowed }}
-          {% else %}
-            Unknown
-          {% endif %}
-        </p>
-      </div>
-    </div>
-    <h2 class="text-[#111518] dark:text-white text-[22px] font-bold px-4 pb-3 pt-5">Description</h2>
-    <p class="text-[#111518] dark:text-white text-base pb-3 pt-1 px-4">{{ property.description or property.blurb }}</p>
-    <!-- Request Appointment Button -->
-    <div class="px-4 pt-6 flex justify-end">
-      <button id="openCalModal" class="bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 font-bold shadow">
-        Request Appointment
-      </button>
-    </div>
-    <!-- Calendar Modal -->
-    <div id="calModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 hidden">
-      <div class="bg-white dark:bg-neutral-900 rounded p-6 w-full max-w-[370px] shadow">
-        <div class="flex justify-between items-center mb-5">
-          <div class="text-lg font-bold text-[#111518] dark:text-white">Request an Appointment</div>
-          <button onclick="closeCalModal()" class="bg-neutral-200 dark:bg-neutral-800 rounded px-2 py-1 text-lg leading-none text-[#111518] dark:text-white">&times;</button>
-        </div>
-        <form id="apptForm">
-          <label for="apptName" class="font-semibold text-sm text-[#111518] dark:text-white">Your Name:</label>
-          <input id="apptName" type="text" required class="w-full border rounded mb-3 p-2 bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800"/>
-          <label class="font-semibold text-sm block mb-2 text-[#111518] dark:text-white">Choose Date:</label>
-          <input id="apptDate" name="date" type="date" min="{{ nowdate }}" required class="mb-3 border rounded p-2 w-full bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800"/>
-          <label for="contactMethod" class="font-semibold text-sm block mb-2 text-[#111518] dark:text-white">Preferred Contact Method:</label>
-          <select id="contactMethod" name="contactMethod" class="w-full border rounded mb-3 p-2 bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800">
-            <option value="email">Email</option>
-            <option value="text">Text</option>
-          </select>
-          <div id="contactInfoContainer">
-            <label for="contactInfo" class="font-semibold text-sm block mb-2 text-[#111518] dark:text-white">Your Email:</label>
-            <input id="contactInfo" type="email" name="contactInfo" required class="w-full border rounded mb-3 p-2 bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800"/>
-          </div>
-          <div id="apptDateFeedback" class="text-red-400 text-xs mb-2"></div>
-          <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 w-full">Request Booking</button>
-          <div id="apptSubmitFeedback" class="text-green-400 text-xs mt-2"></div>
-        </form>
-      </div>
-    </div>
-  </div>
-</div>
-<script>
-    // Carousel
-    document.addEventListener("DOMContentLoaded", function() {
-      let images = {{ property.photos | tojson }};
-      let idx = 0;
-      let imgTag = document.getElementById('carouselImg');
-      let dots = document.querySelectorAll('.carousel-dot');
-      function updateCarousel(index) {
-        idx = index;
-        imgTag.src = images[idx];
-        dots.forEach((d,i) => d.className = 'block w-2 h-2 rounded-full carousel-dot ' + (i === idx ? 'bg-blue-500' : 'bg-neutral-700'));
-      }
-      document.getElementById('carouselPrev').onclick = function() {
-        idx = (idx - 1 + images.length) % images.length;
-        updateCarousel(idx);
-      };
-      document.getElementById('carouselNext').onclick = function() {
-        idx = (idx + 1) % images.length;
-        updateCarousel(idx);
-      };
-      dots.forEach((dot, i) => dot.onclick = () => updateCarousel(i));
-      updateCarousel(0);
-      // Modal calendar logic
-      let modal = document.getElementById('calModal');
-      let openBtn = document.getElementById('openCalModal');
-      let closeCalModal = window.closeCalModal = () => modal.classList.add("hidden");
-      openBtn.onclick = function() {
-        modal.classList.remove("hidden");
-        document.getElementById('apptSubmitFeedback').innerHTML = '';
-      };
-      let minDate = "{{ nowdate }}";
-      // Contact method logic
-      const contactMethod = document.getElementById('contactMethod');
-      const contactInfoContainer = document.getElementById('contactInfoContainer');
-      const contactInfoInput = document.getElementById('contactInfo');
-      function updateContactInfoField() {
-        if (contactMethod.value === "text") {
-          contactInfoContainer.innerHTML = `<label for="contactInfo" class="font-semibold text-sm block mb-2 text-white">Your Phone Number:</label>
-            <input id="contactInfo" type="tel" name="contactInfo" required class="w-full border rounded mb-3 p-2 bg-neutral-950 text-white border-neutral-800"/>`;
-        } else {
-          contactInfoContainer.innerHTML = `<label for="contactInfo" class="font-semibold text-sm block mb-2 text-white">Your Email:</label>
-            <input id="contactInfo" type="email" name="contactInfo" required class="w-full border rounded mb-3 p-2 bg-neutral-950 text-white border-neutral-800"/>`;
-        }
-      }
-      contactMethod.addEventListener("change", updateContactInfoField);
-      updateContactInfoField();
-      // Form handler
-      document.getElementById('apptForm').onsubmit = async function(ev){
-        ev.preventDefault();
-        let name = document.getElementById('apptName').value.trim();
-        let date = document.getElementById('apptDate').value;
-        let method = document.getElementById('contactMethod').value;
-        let contactInfo = document.getElementById('contactInfo').value.trim();
-        let feedbackBox = document.getElementById('apptDateFeedback');
-        if (!name || !date || !contactInfo) return;
-        feedbackBox.textContent = '';
-        let resp = await fetch('{{ url_for("schedule_appointment", uuid=property.id) }}', {
-            method: "POST", headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({name:name, date:date, contact_method:method, contact_info:contactInfo})
-        });
-        let data = await resp.json();
-        if (data.success){
-          document.getElementById('apptSubmitFeedback').innerHTML = "Your appointment was requested!";
-          document.getElementById('apptForm').reset();
-        } else {
-          feedbackBox.textContent = data.error || "Failed to request.";
-        }
-      }
-    });
-    </script>
-    <script>
-    // Property change detection for details page (with image diff)
-    (function() {
-      const STORAGE_KEY = "property_snapshot";
-      // Helper: find property by id in list
-      function findById(list, id) {
-        return (list || []).find(p => p.id === id);
-      }
-      // Helper: diff two arrays (for images)
-      function diffArrays(oldArr, newArr) {
-        oldArr = oldArr || [];
-        newArr = newArr || [];
-        const added = newArr.filter(x => !oldArr.includes(x));
-        const removed = oldArr.filter(x => !newArr.includes(x));
-        const unchanged = newArr.filter(x => oldArr.includes(x));
-        return { added, removed, unchanged };
-      }
-      // Helper: diff two property objects (fields + images)
-      function diffProperty(oldProp, newProp) {
-        if (!oldProp) return { added: true, new: newProp };
-        const diffs = [];
-        // Shallow fields (non-object, except images)
-        for (const key of Object.keys(newProp)) {
-          if (key === "photos" || key === "thumbnail") continue;
-          if (typeof newProp[key] === "object") continue;
-          if (oldProp[key] !== newProp[key]) {
-            diffs.push({
-              field: key,
-              old: oldProp[key],
-              new: newProp[key]
-            });
-          }
-        }
-        // Thumbnail diff
-        if (oldProp.thumbnail !== newProp.thumbnail) {
-          diffs.push({
-            field: "thumbnail",
-            old: oldProp.thumbnail,
-            new: newProp.thumbnail
-          });
-        }
-        // Photos array diff
-        const photoDiff = diffArrays(oldProp.photos, newProp.photos);
-        if (photoDiff.added.length || photoDiff.removed.length) {
-          diffs.push({
-            field: "photos",
-            added: photoDiff.added,
-            removed: photoDiff.removed
-          });
-        }
-        return diffs.length ? { changed: true, diffs } : null;
-      }
-      // Get current property id and data
-      const propId = "{{ property.id }}";
-      const currentProp = {{ property | tojson }};
-      let oldProps = [];
-      try {
-        oldProps = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-      } catch {}
-      const oldProp = findById(oldProps, propId);
-      const diff = diffProperty(oldProp, currentProp);
-      if (!oldProp) {
-        console.log(`[Property Details] This property was not in the previous snapshot (new or first visit).`);
-      } else if (!diff) {
-        console.log(`[Property Details] No changes detected for this property.`);
-      } else if (diff.changed) {
-        console.group(`[Property Details] Changes detected for property ID ${propId}:`);
-        diff.diffs.forEach(d => {
-          if (d.field === "photos") {
-            if (d.added.length)
-              console.log("Photos added:", d.added);
-            if (d.removed.length)
-              console.log("Photos removed:", d.removed);
-            if (!d.added.length && !d.removed.length)
-              console.log("No changes in photos.");
-          } else if (d.field === "thumbnail") {
-            console.log("Thumbnail changed:", { old: d.old, new: d.new });
-          } else {
-            console.log(`Field changed: ${d.field}`, { old: d.old, new: d.new });
-          }
-        });
-        // Also print a summary table for non-image fields
-        const tableRows = diff.diffs
-          .filter(d => d.field !== "photos" && d.field !== "thumbnail")
-          .map(d => ({
-            Field: d.field,
-            "Old Value": d.old,
-            "New Value": d.new
-          }));
-        if (tableRows.length) {
-          console.table(tableRows);
-        }
-        console.groupEnd();
-      } else if (diff.added) {
-        console.log(`[Property Details] This property was just added.`, diff.new);
-      }
-    })();
-    </script>
-    {% endblock %}
-    """
-    return render_template_string(
-        SHELL.replace("{% block content %}{% endblock %}", detail_html),
-        property=property_info,
-        nowdate=nowdate,
-        booked_dates=booked_dates,
-        title=property_info.get("name", "Property"),
-    )
+    try:
+        # Use cache for property details
+        with cache_lock:
+            property_info = next((p for p in properties_cache if p.get("id") == uuid), None)
+        if not property_info:
+            return "Property not found", 404
+        
+        # Ensure photos is always a list
+        if "photos" not in property_info or not isinstance(property_info["photos"], list):
+            property_info["photos"] = []
+        
+        # Ensure other required fields exist
+        property_info.setdefault("name", "Property")
+        property_info.setdefault("address", "N/A")
+        property_info.setdefault("rent", "N/A")
+        property_info.setdefault("deposit", "N/A")
+        property_info.setdefault("bedrooms", "N/A")
+        property_info.setdefault("bathrooms", "N/A")
+        property_info.setdefault("sqft", "N/A")
+        property_info.setdefault("lease_length", "12 months")
+        property_info.setdefault("included_amenities", [])
+        property_info.setdefault("description", "")
+        property_info.setdefault("blurb", property_info.get("description", ""))
+        property_info.setdefault("pets_allowed", "Unknown")
+        property_info.setdefault("thumbnail", property_info["photos"][0] if property_info["photos"] else "")
+        
+        global property_appointments
+        property_appointments = load_appointments()
+        booked_dates = sorted(list(property_appointments.get(uuid, set())))
+        nowdate = datetime.date.today().strftime("%Y-%m-%d")
+        
+        return render_template(
+            "property_details.html",
+            property=property_info,
+            nowdate=nowdate,
+            booked_dates=booked_dates,
+            title=property_info.get("name", "Property"),
+        )
+    except Exception as e:
+        error_message = f"Error loading property {uuid}: {str(e)}"
+        log_and_notify_error("Property Details Error", error_message)
+        return "Internal server error", 500
 @app.route("/property/<uuid>/schedule", methods=["POST"])
 def schedule_appointment(uuid):
     data = request.get_json(force=True)
@@ -885,42 +702,10 @@ def schedule_appointment(uuid):
     return jsonify(success=True)
 @app.route("/about")
 def about():
-    about_html = """
-    {% block content %}
-    <div class="px-4 sm:px-8 md:px-16 lg:px-24 py-6 sm:py-10 md:py-12 max-w-full sm:max-w-2xl mx-auto">
-        <h2 class="text-2xl font-bold mb-4">About Somewheria, LLC.</h2>
-        <p>Email: <a href="mailto:angela@somewheria.com" class="underline text-blue-600">angela@somewheria.com</a></p>
-        <p class="mt-1">Contact Person: Angela </p><p>Phone: (570) 236-9960</p>
-        <p class="mt-5">We are a next-generation rental company, matching you to your ideal home seamlessly!</p>
-    </div>
-    {% endblock %}
-    """
-    return render_template_string(SHELL.replace("{% block content %}{% endblock %}", about_html), title="About")
+    return render_template("about.html", title="About")
 @app.route("/contact")
 def contact():
-    contact_html = """
-    {% block content %}
-    <div class="px-4 sm:px-8 md:px-16 lg:px-24 py-6 sm:py-10 md:py-12 max-w-full sm:max-w-2xl mx-auto">
-      <h2 class="text-2xl font-bold mb-4 text-[#111518] dark:text-white">Contact Us</h2>
-      <form action="mailto:contact@somewheria.com" method="POST" enctype="text/plain" class="mt-4 max-w-md bg-white dark:bg-neutral-900 rounded shadow p-6">
-        <div class="mb-4">
-          <label for="contactName" class="block text-sm font-semibold text-[#111518] dark:text-white mb-2">Your Name</label>
-          <input type="text" id="contactName" name="name" placeholder="Your Name" required class="w-full p-2 border rounded bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800" />
-        </div>
-        <div class="mb-4">
-          <label for="contactEmail" class="block text-sm font-semibold text-[#111518] dark:text-white mb-2">Your Email</label>
-          <input type="email" id="contactEmail" name="email" placeholder="Your Email" required class="w-full p-2 border rounded bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800" />
-        </div>
-        <div class="mb-4">
-          <label for="contactMessage" class="block text-sm font-semibold text-[#111518] dark:text-white mb-2">Your Message</label>
-          <textarea id="contactMessage" name="message" placeholder="Your Message" rows="5" required class="w-full p-2 border rounded bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800"></textarea>
-        </div>
-        <input type="submit" value="Send Message" class="mt-2 bg-blue-500 text-white px-4 py-2 rounded cursor-pointer hover:bg-blue-600 font-bold shadow" />
-      </form>
-    </div>
-    {% endblock %}
-    """
-    return render_template_string(SHELL.replace("{% block content %}{% endblock %}", contact_html), title="Contact")
+    return render_template("contact.html", title="Contact")
 @app.route("/logs")
 def view_logs():
     log_entries = []
@@ -938,7 +723,6 @@ def view_logs():
                     timestamp, level, message = '', '', line
                 # Attempt to parse timestamp and replace numbers with words
                 def number_to_words(n):
-                    # Only for 0-59
                     words = [
                         'zero','one','two','three','four','five','six','seven','eight','nine','ten',
                         'eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen','twenty',
@@ -956,7 +740,6 @@ def view_logs():
                     return str(n)
                 def timestamp_to_words(ts):
                     import re
-                    # Example: '2025-07-12 20\t59\t53,152'
                     match = re.match(r'(\d{4})-(\d{2})-(\d{2})[\s\t]+(\d{2})[\t:]+(\d{2})[\t:]+([\d,]+)', ts)
                     if match:
                         year, month, day, hour, minute, second = match.groups()
@@ -964,94 +747,37 @@ def view_logs():
                         month_word = months[int(month)-1] if month.isdigit() and 1 <= int(month) <= 12 else month
                         hour_word = number_to_words(hour);
                         minute_word = number_to_words(minute);
-                    # For seconds, keep as is if it has comma (milliseconds)
-                    second_main = second.split(',')[0]
-                    second_word = number_to_words(second_main)
-                    ms = ''
-                    if ',' in second:
-                        ms = ',' + second.split(',')[1]
-                    return f"{month_word} {number_to_words(day)}, {year} at {hour_word} {minute_word} {second_word}{ms}"
-                    return ts;
-                # Remove ANSI escape codes from message for readability
+                        second_main = second.split(',')[0]
+                        second_word = number_to_words(second_main)
+                        ms = ''
+                        if ',' in second:
+                            ms = ',' + second.split(',')[1]
+                        return f"{month_word} {number_to_words(day)}, {year} at {hour_word} {minute_word} {second_word}{ms}"
+                    return ts
                 import re
                 ansi_escape = re.compile(r'\x1B\[[0-9;]*[mK]')
                 clean_message = ansi_escape.sub('', message)
+                # Robust timestamp parsing
+                try:
+                    ts_words = timestamp_to_words(timestamp)
+                except Exception as e:
+                    print(f"[LOGS] Failed to parse timestamp: {timestamp} ({e})")
+                    ts_words = timestamp or 'Unknown'
                 log_entries.append({
-                    'timestamp': timestamp_to_words(timestamp),
+                    'timestamp': ts_words,
                     'level': level,
                     'message': clean_message
                 })
-    log_html = '''
-    {% block content %}
-    <div class="px-4 sm:px-8 md:px-16 lg:px-24 py-10 max-w-full sm:max-w-3xl mx-auto">
-      <h2 class="text-2xl font-bold mb-6">Application Logs</h2>
-      <div class="mb-4 flex items-center gap-3">
-        <input id="logSearch" type="text" placeholder="Search logs..." class="border rounded p-2 w-full max-w-xs" />
-        <button onclick="location.reload()" class="bg-blue-500 text-white px-3 py-2 rounded hover:bg-blue-600">Refresh</button>
-      </div>
-      <div class="overflow-x-auto">
-        <table class="min-w-full text-sm border rounded shadow">
-          <thead class="bg-gray-100">
-            <tr>
-              <th class="px-3 py-2 text-left">Timestamp</th>
-              <th class="px-3 py-2 text-left">Level</th>
-              <th class="px-3 py-2 text-left">Message</th>
-            </tr>
-          </thead>
-          <tbody id="logTableBody">
-            {% for entry in log_entries %}
-            <tr class="{% if entry.level.strip() == 'ERROR' %}bg-red-50{% elif entry.level.strip() == 'WARNING' %}bg-yellow-50{% elif entry.level.strip() == 'INFO' %}bg-blue-50{% endif %}">
-              <td class="px-3 py-2 whitespace-nowrap">{{ entry.timestamp }}</td>
-              <td class="px-3 py-2">
-                <span class="px-2 py-1 rounded text-xs font-bold {% if entry.level.strip() == 'ERROR' %}bg-red-500 text-white{% elif entry.level.strip() == 'WARNING' %}bg-yellow-400 text-black{% elif entry.level.strip() == 'INFO' %}bg-blue-400 text-white{% else %}bg-gray-300 text-black{% endif %}">{{ entry.level }}</span>
-              </td>
-              <td class="px-3 py-2">{{ entry.message }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-        {% if not log_entries %}
-          <div class="text-gray-500 py-8 text-center">No logs available.</div>
-        {% endif %}
-      </div>
-    </div>
-    <script>
-    // Simple client-side search
-    document.getElementById('logSearch').addEventListener('input', function() {
-      var filter = this.value.toLowerCase();
-      var rows = document.querySelectorAll('#logTableBody tr');
-      rows.forEach(function(row) {
-        var text = row.textContent.toLowerCase();
-        row.style.display = text.includes(filter) ? '' : 'none';
-      });
-    });
-    </script>
-    {% endblock %}
-    '''
-    return render_template_string(SHELL.replace('{% block content %}{% endblock %}', log_html), log_entries=log_entries, title="Logger")
+    return render_template(
+        "logs.html",
+        log_entries=log_entries,
+        title="Logger"
+    )
 
 # GET route to render the report issue form
 @app.route("/report-issue", methods=["GET"])
 def report_issue_form():
-    form_html = """
-    {% block content %}
-    <div class="px-4 sm:px-8 md:px-16 lg:px-24 py-10 max-w-full sm:max-w-2xl mx-auto">
-      <h2 class="text-2xl font-bold mb-6 text-[#111518] dark:text-white text-center drop-shadow-lg">Report an Issue</h2>
-      <form action="{{ url_for('report_issue') }}" method="POST" class="bg-white dark:bg-neutral-900 rounded shadow p-6">
-        <div class="mb-4">
-          <label for="name" class="block text-sm font-semibold text-[#111518] dark:text-white mb-2">Your Name</label>
-          <input type="text" id="name" name="name" required class="w-full p-2 border rounded bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800" />
-        </div>
-        <div class="mb-4">
-          <label for="description" class="block text-sm font-semibold text-[#111518] dark:text-white mb-2">Issue Description</label>
-          <textarea id="description" name="description" rows="5" required class="w-full p-2 border rounded bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800"></textarea>
-        </div>
-        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-bold shadow">Submit Issue</button>
-      </form>
-    </div>
-    {% endblock %}
-    """
-    return render_template_string(SHELL.replace("{% block content %}{% endblock %}", form_html), title="Report an Issue")
+    return render_template("report_issue.html", title="Report an Issue", confirmation=False)
 
 # POST route to handle form submission
 @app.route("/report-issue", methods=["POST"])
@@ -1062,43 +788,70 @@ def report_issue():
         return "Name and description are required fields.", 400
     email_body = f"Issue reported by {user_name}:\n\n{issue_description}"
     send_email("User Reported Issue", email_body)
-    confirmation_html = f"""
-    {{% block content %}}
-    <div class='px-4 sm:px-8 md:px-16 lg:px-24 py-10 max-w-full sm:max-w-2xl mx-auto'>
-      <h2 class='text-2xl font-bold mb-6 text-[#111518] dark:text-white text-center drop-shadow-lg'>Report an Issue</h2>
-      <div class="bg-green-100 text-green-800 font-bold px-6 py-5 rounded mb-8 text-center">
-        Thank you {user_name}, your report has been submitted!
-      </div>
-      <div class="text-gray-800 mb-6">
-        <div><strong>Submitted Description:</strong></div>
-        <div class="bg-gray-50 border px-4 py-2 rounded mt-2 mb-4">{issue_description}</div>
-      </div>
-      <form action="{{{{ url_for('report_issue') }}}}" method="POST" class="bg-white dark:bg-neutral-900 rounded shadow p-6">
-        <div class="mb-4">
-          <label for="name" class="block text-sm font-semibold text-[#111518] dark:text-white mb-2">Your Name</label>
-          <input type="text" id="name" name="name" required class="w-full p-2 border rounded bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800" />
-        </div>
-        <div class="mb-4">
-          <label for="description" class="block text-sm font-semibold text-[#111518] dark:text-white mb-2">Issue Description</label>
-          <textarea id="description" name="description" rows="5" required class="w-full p-2 border rounded bg-neutral-100 dark:bg-neutral-950 text-[#111518] dark:text-white border-neutral-200 dark:border-neutral-800"></textarea>
-        </div>
-        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-bold shadow">Submit Issue</button>
-      </form>
-    </div>
-    {{% endblock %}}
-    """
-    return render_template_string(SHELL.replace("{% block content %}{% endblock %}", confirmation_html), name=user_name, desc=issue_description)
+    return render_template(
+        "report_issue.html",
+        title="Report an Issue",
+        confirmation=True,
+        name=user_name,
+        desc=issue_description
+    )
 @app.route("/save-edit/<id>", methods=["POST"])
+@login_required
 def save_edit(id):
     try:
-        content = request.json.get("content", "")
-        print(f"Saving edits for {id}: {content}")
-        return jsonify(success=True, data=content)
+        # Accept form data
+        form = request.form
+        with cache_lock:
+            prop = next((p for p in properties_cache if p.get("id") == id), None)
+            if not prop:
+                return "Property not found", 404
+            
+            # Update basic fields
+            prop["name"] = form.get("name", prop.get("name"))
+            prop["address"] = form.get("address", prop.get("address"))
+            prop["rent"] = form.get("rent", prop.get("rent"))
+            prop["deposit"] = form.get("deposit", prop.get("deposit"))
+            prop["bedrooms"] = form.get("bedrooms", prop.get("bedrooms"))
+            prop["bathrooms"] = form.get("bathrooms", prop.get("bathrooms"))
+            prop["lease_length"] = form.get("lease_length", prop.get("lease_length"))
+            prop["pets_allowed"] = form.get("pets_allowed", prop.get("pets_allowed"))
+            prop["blurb"] = form.get("blurb", prop.get("blurb"))
+            prop["description"] = form.get("description", prop.get("description"))
+            
+            # Handle amenities
+            amenities = form.getlist('amenities')  # Get all checked amenities
+            custom_amenities = form.get("custom_amenities", "").strip()
+            
+            # Combine amenities
+            all_amenities = amenities.copy()
+            if custom_amenities:
+                custom_list = [a.strip() for a in custom_amenities.split(',') if a.strip()]
+                all_amenities.extend(custom_list)
+            
+            prop["included_amenities"] = all_amenities
+            prop["custom_amenities"] = custom_amenities
+            
+            # Handle photo deletion
+            photos_to_delete = form.get("photos_to_delete")
+            if photos_to_delete:
+                try:
+                    photos_to_delete = json.loads(photos_to_delete)
+                    if isinstance(photos_to_delete, list):
+                        # Remove selected photos from the property
+                        current_photos = prop.get("photos", [])
+                        prop["photos"] = [p for p in current_photos if p not in photos_to_delete]
+                        print(f"Removed {len(photos_to_delete)} photos from property {id}")
+                except json.JSONDecodeError:
+                    print(f"Invalid JSON in photos_to_delete for property {id}")
+            
+        print(f"Edits saved for {id}: {prop}")
+        return redirect(url_for("manage_listings"))
     except Exception as e:
         error_message = f"Error saving edits for {id}: {str(e)}"
         log_and_notify_error("Save Edit Error", error_message)
-        return jsonify(success=False, error=str(e)), 500
+        return str(e), 500
 @app.route("/upload-image/<uuid>", methods=["POST"])
+@login_required
 def upload_image(uuid):
     if "file" not in request.files:
         message = "No file part"
@@ -1124,6 +877,7 @@ def upload_image(uuid):
     new_image_url = url_for("static", filename=f"uploads/{new_filename}", _external=False)
     return jsonify(success=True, new_image_url=new_image_url)
 @app.route("/image-edit-notify", methods=["POST"])
+@login_required
 def image_edit_notify():
     try:
         data = request.json
@@ -1137,5 +891,5 @@ def image_edit_notify():
 if __name__ == "__main__":
     print("Warming property cache and processing images...")
     print_check_file(PROPERTY_APPTS_FILE, "Appointments file at startup")
-    app.run("0.0.0.0", port=80, debug=False)
+    app.run("0.0.0.0", port=5000, debug=False)
 
