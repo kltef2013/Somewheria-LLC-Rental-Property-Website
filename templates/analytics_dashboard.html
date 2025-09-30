@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-3xl mx-auto py-10 px-4 bg-white dark:bg-neutral-950 rounded shadow">
+  <h1 class="text-2xl font-bold mb-6 text-[#111518] dark:text-white">Site Analytics</h1>
+  <div class="mb-6 text-gray-700 dark:text-gray-300">
+    Welcome, {{ user.name or user.email }}! (High-Level Admin)
+  </div>
+  <div class="grid grid-cols-2 gap-6 mb-8">
+    <div class="bg-white dark:bg-neutral-900 rounded shadow p-5">
+      <div class="text-3xl font-bold text-blue-600 dark:text-blue-400">{{ metrics.site_visits }}</div>
+      <div class="text-gray-500 dark:text-gray-400">Site Visits</div>
+    </div>
+    <div class="bg-white dark:bg-neutral-900 rounded shadow p-5">
+      <div class="text-3xl font-bold text-blue-600 dark:text-blue-400">{{ metrics.unique_users }}</div>
+      <div class="text-gray-500 dark:text-gray-400">Unique Users</div>
+    </div>
+    <div class="bg-white dark:bg-neutral-900 rounded shadow p-5">
+      <div class="text-3xl font-bold text-blue-600 dark:text-blue-400">{{ metrics.properties_listed }}</div>
+      <div class="text-gray-500 dark:text-gray-400">Properties Listed</div>
+    </div>
+    <div class="bg-white dark:bg-neutral-900 rounded shadow p-5">
+      <div class="text-3xl font-bold text-blue-600 dark:text-blue-400">{{ metrics.logins_today }}</div>
+      <div class="text-gray-500 dark:text-gray-400">Logins Today</div>
+    </div>
+    <div class="bg-white dark:bg-neutral-900 rounded shadow p-5">
+      <div class="text-3xl font-bold text-red-600 dark:text-red-400">{{ metrics.errors_last_24h }}</div>
+      <div class="text-gray-500 dark:text-gray-400">Errors (24h)</div>
+    </div>
+  </div>
+  <div class="bg-white dark:bg-neutral-900 rounded shadow p-6">
+    <h2 class="text-lg font-semibold mb-4">Traffic & Usage Charts</h2>
+    <div id="analytics-charts" class="space-y-8">
+      <div>
+        <div class="font-semibold mb-2">Site Visits (7 days)</div>
+        <div id="visits-chart" style="height:300px;"></div>
+      </div>
+      <div>
+        <div class="font-semibold mb-2">Logins & Unique Users (7 days)</div>
+        <div id="logins-users-chart" style="height:300px;"></div>
+      </div>
+      <div>
+        <div class="font-semibold mb-2">Errors (7 days)</div>
+        <div id="errors-chart" style="height:300px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<script>
+const chartData = JSON.parse('{{ chart_data|tojson|safe }}');
+// Visits
+Plotly.newPlot('visits-chart', [{
+  x: chartData.days,
+  y: chartData.visits,
+  type: 'bar',
+  marker: {color: '#2563eb'},
+  name: 'Visits'
+}], {
+  margin: {t: 30},
+  yaxis: {title: 'Visits'},
+  xaxis: {title: 'Date'}
+});
+// Logins & Unique Users
+Plotly.newPlot('logins-users-chart', [
+  {
+    x: chartData.days,
+    y: chartData.logins,
+    type: 'scatter',
+    mode: 'lines+markers',
+    name: 'Logins',
+    line: {color: '#059669'}
+  },
+  {
+    x: chartData.days,
+    y: chartData.unique_users,
+    type: 'scatter',
+    mode: 'lines+markers',
+    name: 'Unique Users',
+    line: {color: '#f59e42'}
+  }
+], {
+  margin: {t: 30},
+  yaxis: {title: 'Count'},
+  xaxis: {title: 'Date'}
+});
+// Errors
+Plotly.newPlot('errors-chart', [{
+  x: chartData.days,
+  y: chartData.errors,
+  type: 'bar',
+  marker: {color: '#dc2626'},
+  name: 'Errors'
+}], {
+  margin: {t: 30},
+  yaxis: {title: 'Errors'},
+  xaxis: {title: 'Date'}
+});
+</script>
+{% endblock %}

@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="h-screen flex flex-col">
+  <div class="bg-white dark:bg-neutral-900 border-b border-gray-200 dark:border-neutral-800 p-4">
+    <div class="flex justify-between items-center">
+      <h1 class="text-xl font-bold text-[#111518] dark:text-white">Site Content Editor</h1>
+      <div class="flex gap-2">
+        <button id="saveBtn" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 font-medium">Save Changes</button>
+        <button id="previewBtn" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-medium">Preview</button>
+      </div>
+    </div>
+  </div>
+  
+  <div id="editor" class="flex-1"></div>
+  
+  <!-- Preview Modal -->
+  <div id="previewModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
+    <div class="flex items-center justify-center min-h-screen p-4">
+      <div class="bg-white dark:bg-neutral-900 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <div class="flex justify-between items-center p-4 border-b border-gray-200 dark:border-neutral-800">
+          <h3 class="text-lg font-semibold text-[#111518] dark:text-white">Content Preview</h3>
+          <button id="closePreview" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+        <div id="previewContent" class="p-6"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- GrapeJS CDN -->
+<link rel="stylesheet" href="https://unpkg.com/grapesjs/dist/css/grapes.min.css">
+<script src="https://unpkg.com/grapesjs"></script>
+
+<script>
+let editor;
+
+document.addEventListener('DOMContentLoaded', function() {
+  // Initialize GrapeJS
+  editor = grapesjs.init({
+    container: '#editor',
+    height: '100%',
+    storageManager: false,
+    panels: {
+      defaults: [
+        {
+          id: 'basic-actions',
+          el: '.panel__basic-actions',
+          buttons: [
+            {
+              id: 'visibility',
+              active: true,
+              className: 'btn-toggle-borders',
+              label: '<u>B</u>',
+              command: 'sw-visibility',
+            },
+          ],
+        },
+      ],
+    },
+    deviceManager: {
+      devices: [
+        {
+          name: 'Desktop',
+          width: '',
+        },
+        {
+          name: 'Tablet',
+          width: '768px',
+          widthMedia: '992px',
+        },
+        {
+          name: 'Mobile',
+          width: '320px',
+          widthMedia: '480px',
+        },
+      ],
+    },
+    plugins: [],
+    pluginsOpts: {},
+  });
+
+  // Load initial content
+  fetch('/admin/editor/content')
+    .then(response => response.json())
+    .then(data => {
+      editor.setComponents(data.content);
+    })
+    .catch(error => {
+      console.error('Error loading content:', error);
+    });
+
+  // Save functionality
+  document.getElementById('saveBtn').addEventListener('click', function() {
+    const html = editor.getHtml();
+    const css = editor.getCss();
+    const content = `<style>${css}</style>${html}`;
+    
+    fetch('/admin/editor', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: `content=${encodeURIComponent(content)}`
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        alert('Content saved successfully!');
+      } else {
+        alert('Error saving content');
+      }
+    })
+    .catch(error => {
+      console.error('Error saving:', error);
+      alert('Error saving content');
+    });
+  });
+
+  // Preview functionality
+  document.getElementById('previewBtn').addEventListener('click', function() {
+    const html = editor.getHtml();
+    const css = editor.getCss();
+    const content = `<style>${css}</style>${html}`;
+    
+    document.getElementById('previewContent').innerHTML = content;
+    document.getElementById('previewModal').classList.remove('hidden');
+  });
+
+  document.getElementById('closePreview').addEventListener('click', function() {
+    document.getElementById('previewModal').classList.add('hidden');
+  });
+
+  // Close modal on background click
+  document.getElementById('previewModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+      this.classList.add('hidden');
+    }
+  });
+});
+</script>
+
+<style>
+.gjs-cv-canvas {
+  top: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.gjs-pn-views-container {
+  background-color: #f8f9fa;
+}
+
+.gjs-pn-panel {
+  background-color: #fff;
+  border: 1px solid #dee2e6;
+}
+
+.gjs-pn-btn {
+  background-color: #007bff;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.gjs-pn-btn:hover {
+  background-color: #0056b3;
+}
+
+.gjs-pn-btn.gjs-pn-active {
+  background-color: #0056b3;
+}
+
+.gjs-block {
+  background-color: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  padding: 8px;
+  margin: 4px;
+  cursor: pointer;
+}
+
+.gjs-block:hover {
+  background-color: #f8f9fa;
+}
+
+.gjs-block-label {
+  font-size: 12px;
+  color: #495057;
+}
+
+.gjs-layer-title {
+  color: #495057;
+}
+
+.gjs-layer-count {
+  background-color: #007bff;
+  color: white;
+}
+
+.gjs-trt-traits {
+  background-color: #fff;
+  border: 1px solid #dee2e6;
+}
+
+.gjs-trt-trait {
+  border-bottom: 1px solid #dee2e6;
+  padding: 8px;
+}
+
+.gjs-trt-trait-label {
+  color: #495057;
+  font-weight: 500;
+}
+
+.gjs-trt-trait-value {
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+
+.gjs-trt-trait-value:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+</style>
+{% endblock %} 

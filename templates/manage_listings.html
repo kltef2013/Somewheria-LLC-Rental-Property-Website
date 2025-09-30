@@ -9,6 +9,9 @@
         <p class="text-[#82686a] text-sm mt-1">Welcome, {{ user.name }} ({{ user.email }})</p>
         {% endif %}
       </div>
+      <div class="flex items-center gap-3">
+        <a href="{{ url_for('add_listing') }}" class="bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700 font-bold shadow">Add Property</a>
+      </div>
     </div>
     <div class="px-4 py-3">
       <label class="flex flex-col min-w-40 h-12 w-full">
@@ -68,7 +71,15 @@
                 {{ prop.rent or prop.price or "$N/A" }}
               </td>
               <td class="table-58fa7d47-c22a-4aac-8800-0bc86c74b851-column-656 h-[72px] px-4 py-2 w-60 text-[#82686a] text-sm font-bold leading-normal tracking-[0.015em]">
-                <a href="{{ url_for('edit_listing', property_id=prop.id) }}" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-bold shadow w-full block text-center">Edit</a>
+                <a href="{{ url_for('edit_listing', property_id=prop.id) }}" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-bold shadow w-full block text-center mb-1">Edit</a>
+                <form action="{{ url_for('delete_listing', id=prop.id) }}" method="post" onsubmit="return confirm('Delete this listing?');">
+                  <button type="submit" class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 font-bold shadow w-full block text-center">Delete</button>
+                </form>
+                <form action="{{ url_for('toggle_sale', id=prop.id) }}" method="post" class="mt-1">
+                  <button type="submit" class="bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700 font-bold shadow w-full block text-center">
+                    {% if prop.for_sale %}List for Rent{% else %}List for Sale{% endif %}
+                  </button>
+                </form>
               </td>
             </tr>
             {% endfor %}

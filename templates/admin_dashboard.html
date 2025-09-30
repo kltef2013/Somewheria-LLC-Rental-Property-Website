@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="px-6 py-6 max-w-7xl mx-auto bg-white dark:bg-neutral-950 rounded shadow">
+  <h1 class="text-3xl font-bold mb-6 text-[#111518] dark:text-white">Admin Dashboard</h1>
+
+  {# --- Analytics Summary --- #}
+  <h2 class="text-2xl font-semibold mb-4 text-[#111518] dark:text-white">Site Analytics (Today)</h2>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+    <div class="p-4 bg-white dark:bg-neutral-800 rounded shadow">
+      <p class="text-sm text-gray-500">Visits</p>
+      <p class="text-2xl font-bold">{{ metrics.site_visits }}</p>
+    </div>
+    <div class="p-4 bg-white dark:bg-neutral-800 rounded shadow">
+      <p class="text-sm text-gray-500">Unique Users</p>
+      <p class="text-2xl font-bold">{{ metrics.unique_users }}</p>
+    </div>
+    <div class="p-4 bg-white dark:bg-neutral-800 rounded shadow">
+      <p class="text-sm text-gray-500">Properties Listed</p>
+      <p class="text-2xl font-bold">{{ metrics.properties_listed }}</p>
+    </div>
+    <div class="p-4 bg-white dark:bg-neutral-800 rounded shadow">
+      <p class="text-sm text-gray-500">Errors (24h)</p>
+      <p class="text-2xl font-bold">{{ metrics.errors_last_24h }}</p>
+    </div>
+  </div>
+
+  {# --- User Management Section --- #}
+  <h2 class="text-2xl font-semibold mb-4 text-[#111518] dark:text-white">User Management</h2>
+  <form method="post" class="mb-6 flex flex-wrap items-end gap-4 p-4 bg-white dark:bg-neutral-800 rounded shadow">
+    <input type="hidden" name="action" value="add">
+    <label class="flex flex-col">
+      <span class="text-sm mb-1 text-[#111518] dark:text-white">Email</span>
+      <input type="email" name="email" required class="border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white">
+    </label>
+    <label class="flex flex-col">
+      <span class="text-sm mb-1 text-[#111518] dark:text-white">Role</span>
+      <select name="role" class="border rounded px-3 py-2 dark:bg-neutral-900 dark:text-white">
+        <option value="renter">Employee</option>
+        <option value="admin">Admin</option>
+        <option value="high_admin">High Admin</option>
+      </select>
+    </label>
+    <button type="submit" class="px-4 py-2 bg-emerald-600 dark:bg-emerald-400 text-white dark:text-[#111518] rounded self-end transition-colors">Add User</button>
+  </form>
+  {% if error %}
+    <div class="mb-4 p-3 bg-red-200 dark:bg-red-900 text-red-800 dark:text-red-200 rounded">{{ error }}</div>
+  {% endif %}
+  {% if success %}
+    <div class="mb-4 p-3 bg-green-200 dark:bg-green-900 text-green-800 dark:text-green-200 rounded">{{ success }}</div>
+  {% endif %}
+  <div class="overflow-x-auto bg-white dark:bg-neutral-800 rounded shadow">
+    <table class="w-full text-left">
+      <thead>
+        <tr class="border-b dark:border-neutral-700">
+          <th class="p-3">Email</th>
+          <th class="p-3">Role</th>
+          <th class="p-3">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for email, role in users %}
+          <tr class="border-b dark:border-neutral-700">
+            <td class="p-3">{{ email }}</td>
+            <td class="p-3">
+              <form method="post" class="flex items-center gap-2">
+                <input type="hidden" name="email" value="{{ email }}">
+                <input type="hidden" name="action" value="update">
+                <select name="role" class="border rounded px-2 py-1 dark:bg-neutral-900 dark:text-white">
+                  <option value="renter" {% if role == 'renter' %}selected{% endif %}>Employee</option>
+                  <option value="admin" {% if role == 'admin' %}selected{% endif %}>Admin</option>
+                  <option value="high_admin" {% if role == 'high_admin' %}selected{% endif %}>High Admin</option>
+                </select>
+                <button type="submit" class="px-3 py-1 bg-blue-600 dark:bg-blue-400 text-white dark:text-[#111518] rounded transition-colors">Save</button>
+              </form>
+            </td>
+            <td class="p-3">
+              <form method="post" onsubmit="return confirm('Delete user {{ email }}?');">
+                <input type="hidden" name="email" value="{{ email }}">
+                <input type="hidden" name="action" value="delete">
+                <button type="submit" class="px-3 py-1 bg-red-600 dark:bg-red-400 text-white dark:text-[#111518] rounded transition-colors">Delete</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

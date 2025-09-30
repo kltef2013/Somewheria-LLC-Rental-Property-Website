@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-2xl mx-auto py-10 px-4 bg-white dark:bg-neutral-950 rounded shadow">
+  <h1 class="text-2xl font-bold mb-6 text-[#111518] dark:text-white">Renter Dashboard</h1>
+  <div class="mb-4 text-gray-700 dark:text-gray-300">
+    Welcome, {{ user.name or user.email }}!
+    <a href="{{ url_for('renter_profile') }}" class="ml-4 bg-blue-600 dark:bg-blue-400 text-white dark:text-[#111518] px-3 py-1 rounded hover:bg-blue-700 dark:hover:bg-blue-600 text-sm transition-colors">Edit Profile</a>
+  </div>
+  <h2 class="text-lg font-semibold mb-2">Your Rental Contracts</h2>
+  {% if contracts and contracts|length > 0 %}
+    <ul class="divide-y divide-gray-200 dark:divide-neutral-800">
+      {% for contract in contracts %}
+        <li class="py-3">
+          <div class="font-medium">Property: {{ contract.property_name }}</div>
+          <div class="text-sm">Lease Dates: {{ contract.start_date }} – {{ contract.end_date }}</div>
+          <div class="text-sm">Status: {{ contract.status }}</div>
+          <a href="{{ contract.download_url }}" class="text-blue-600 dark:text-blue-400 underline text-sm">Download PDF</a>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="text-gray-500 dark:text-gray-400">No rental contracts found.</div>
+  {% endif %}
+</div>
+{% endblock %}

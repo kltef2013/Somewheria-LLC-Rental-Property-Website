@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>{{ title or 'Offline' }}</title>
+  <meta name="theme-color" content="#111518">
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background: #f5f5f5;
+      color: #111518;
+      display: grid;
+      min-height: 100vh;
+      place-items: center;
+    }
+    .card {
+      max-width: 560px;
+      width: 92%;
+      background: white;
+      border-radius: 14px;
+      padding: 24px 20px;
+      box-shadow: 0 10px 30px rgba(17,21,24,0.12);
+    }
+    h1 { margin: 0 0 8px; font-size: 1.4rem; }
+    p { margin: 6px 0 0; line-height: 1.5; }
+    .actions { margin-top: 18px; display: flex; gap: 10px; flex-wrap: wrap; }
+    a.button, button.button {
+      appearance: none;
+      border: 1px solid #111518;
+      background: #111518;
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.button.alt {
+      background: transparent;
+      color: #111518;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { background: #0a0a0a; color: #e6e6e6; }
+      .card { background: #141414; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+      a.button, button.button { border-color: #e6e6e6; }
+      button.button.alt { color: #e6e6e6; }
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+      color: inherit;
+      text-decoration: none;
+    }
+    .brand img {
+      width: 28px; height: 28px; border-radius: 6px; object-fit: cover;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <a class="brand" href="{{ url_for('home') }}">
+      <img src="{{ url_for('static', filename='web_light_rd_SI@1x.png') }}" alt="Somewheria">
+      <strong>Somewheria</strong>
+    </a>
+    <h1>You're offline</h1>
+    <p>It looks like your device has lost its internet connection. You can continue browsing any pages you've already visited. When you're back online, reload to get the latest content.</p>
+    <div class="actions">
+      <button class="button" onclick="location.reload()">Retry</button>
+      <a class="button alt" href="{{ url_for('home') }}">Go to Home</a>
+      <a class="button alt" href="{{ url_for('for_rent') }}">For Rent</a>
+      <a class="button alt" href="{{ url_for('contact') }}">Contact</a>
+    </div>
+  </div>
+</body>
+</html>
