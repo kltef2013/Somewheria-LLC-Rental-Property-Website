@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@theme-toggles/react": "^4.1.0"
+  }
+}
