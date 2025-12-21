@@ -1,0 +1,33 @@
+name: Flask CI/CD
+on: [push]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install playwright pytest-playwright
+          playwright install --with-deps
+
+      - name: Run Flask in background
+        run: |
+          python app.py & 
+          sleep 5 # Wait for Flask to start
+
+      - name: Run Playwright Tests
+        run: pytest tests/  # This is where your codegen scripts go
+
+  deploy:
+    needs: test # THIS IS THE KEY: It only runs if tests pass
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Deploy
+        run: curl ${{ secrets.RENDER_DEPLOY_HOOK }} # A simple URL Render gives you
