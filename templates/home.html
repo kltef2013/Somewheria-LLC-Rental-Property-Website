@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="px-4 sm:px-8 md:px-16 lg:px-24 py-6 sm:py-10 md:py-12 max-w-full sm:max-w-2xl mx-auto">
-    <h1 class="text-3xl font-bold mb-4">Welcome to Somewheria, LLC.</h1>
-    <p class="mb-6">Find your next rental in style and comfort.</p>
-    <a class="bg-blue-600 hover:bg-blue-800 text-white px-6 py-3 rounded" href="{{ url_for('for_rent') }}">
+<div class="px-4 sm:px-8 md:px-16 lg:px-24 py-6 sm:py-10 md:py-12 max-w-full sm:max-w-2xl mx-auto bg-white dark:bg-neutral-950 rounded shadow">
+    <h1 class="text-3xl font-bold mb-4 text-[#111518] dark:text-white">Welcome to Somewheria, LLC.</h1>
+    <p class="mb-6 text-[#111518] dark:text-neutral-200">Find your next rental in style and comfort.</p>
+    <a class="bg-blue-600 hover:bg-blue-800 dark:bg-blue-400 dark:hover:bg-blue-600 text-white dark:text-[#111518] px-6 py-3 rounded transition-colors" href="{{ url_for('for_rent') }}">
         View Properties
     </a>
 </div>

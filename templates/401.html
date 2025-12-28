@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex flex-col items-center justify-center py-20 text-center bg-white dark:bg-neutral-950 rounded shadow">
+  <h1 class="text-4xl font-bold mb-4 text-[#111518] dark:text-white">Access Restricted</h1>
+  <p class="text-lg mb-6 text-[#111518] dark:text-neutral-200">You don’t have permission to view this page.</p>
+  <a href="{{ url_for('home') }}" class="text-blue-600 dark:text-blue-400 underline">Return to Home</a>
+</div>
+{% endblock %}
