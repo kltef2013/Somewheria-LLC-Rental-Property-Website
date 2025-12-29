@@ -693,8 +693,104 @@ threading.Thread(target=periodic_cache_refresh, daemon=True).start()
 
 @app.route("/for-rent")
 def for_rent():
-    # Use cache only, never block for refresh
+    # Fetch latest property data from API
+    def fetch_latest_properties():
+        base = "https://7pdnexz05a.execute-api.us-east-1.amazonaws.com/test"
+        try:
+            resp = requests.get(f"{base}/propertiesforrent", timeout=20)
+            resp.raise_for_status()
+            uuids = resp.json().get("property_ids", [])
+        except Exception:
+            uuids = []
+        def fetch_property(uuid):
+            try:
+                d = requests.get(f"{base}/properties/{uuid}/details", timeout=10).json()
+                d["photos"] = []
+                photo_urls = []
+                try:
+                    photo_urls = requests.get(f"{base}/properties/{uuid}/photos", timeout=10).json()
+                except Exception:
+                    pass
+                for photourl in photo_urls:
+                    b64img = get_base64_image_from_url(photourl)
+                    if b64img:
+                        d["photos"].append(b64img)
+                try:
+                    thumbnail_url = requests.get(f"{base}/properties/{uuid}/thumbnail", timeout=10).json()
+                except Exception:
+                    thumbnail_url = None
+                d["thumbnail"] = thumbnail_url or (d["photos"][0] if d["photos"] else "")
+                d["id"] = uuid
+                d.setdefault("included_amenities", d.get("included_utilities", []))
+                d.setdefault("bedrooms", "N/A")
+                d.setdefault("bathrooms", "N/A")
+                d.setdefault("rent", "N/A")
+                d.setdefault("sqft", "N/A")
+                d.setdefault("deposit", "N/A")
+                d.setdefault("address", "N/A")
+                d["description"] = d.get("description", "")
+                d.setdefault("blurb", d["description"])
+                d.setdefault("lease_length", d.get("lease_length", "12 months"))
+                pets_allowed = "Unknown"
+                if "pets_allowed" in d:
+                    pets_allowed = "Yes" if d["pets_allowed"] else "No"
+                elif "included_amenities" in d and any("pet" in str(a).lower() for a in d["included_amenities"]):
+                    pets_allowed = "Yes"
+                elif "description" in d and "pet" in d["description"].lower():
+                    pets_allowed = "Yes"
+                d["pets_allowed"] = pets_allowed
+                return d
+            except Exception as e:
+                print(f"Property fetch for {uuid} failed: {e}")
+                return None
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(executor.map(fetch_property, uuids))
+            return [p for p in results if p]
+    latest_properties = fetch_latest_properties()
+    # Compare with in-memory cache
+    import json
+    def get_id_set(props):
+        return set(p.get("id") for p in props if p and "id" in p)
+    def get_prop_by_id(props):
+        return {p.get("id"): p for p in props if p and "id" in p}
     with cache_lock:
+        current_serialized = json.dumps(properties_cache, sort_keys=True)
+        latest_serialized = json.dumps(latest_properties, sort_keys=True)
+        if current_serialized != latest_serialized:
+            old_ids = get_id_set(properties_cache)
+            new_ids = get_id_set(latest_properties)
+            added = new_ids - old_ids
+            removed = old_ids - new_ids
+            changed = []
+            old_by_id = get_prop_by_id(properties_cache)
+            new_by_id = get_prop_by_id(latest_properties)
+            for pid in (old_ids & new_ids):
+                old = old_by_id[pid]
+                new = new_by_id[pid]
+                # Compare fields (shallow, for brevity)
+                diffs = []
+                for k in set(old.keys()).union(new.keys()):
+                    if old.get(k) != new.get(k):
+                        diffs.append(k)
+                if diffs:
+                    changed.append({"id": pid, "fields": diffs})
+            # Log details
+            log_details = {
+                "added_ids": list(added),
+                "removed_ids": list(removed),
+                "changed": changed,
+                "old_count": len(properties_cache),
+                "new_count": len(latest_properties)
+            }
+            print(f"[for_rent] properties_cache updated from API. Details: {json.dumps(log_details, indent=2)}")
+            try:
+                user_email = get_current_user().get("email", "") if is_logged_in() else "anonymous"
+            except Exception:
+                user_email = "anonymous"
+            log_site_change(user_email, "properties_cache_updated", log_details)
+            properties_cache.clear()
+            properties_cache.extend(latest_properties)
         properties = list(properties_cache)
     return render_template("for_rent.html", properties=properties, title="For Rent")
 
