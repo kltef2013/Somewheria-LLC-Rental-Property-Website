@@ -1535,4 +1535,5 @@ def offline():
 if __name__ == "__main__":
     print("Warming property cache and processing images...")
     print_check_file(PROPERTY_APPTS_FILE, "Appointments file at startup")
-    app.run("0.0.0.0", port=5000, debug=False)
+    app.run("0.0.0.0", port=80, debug=False)
+
