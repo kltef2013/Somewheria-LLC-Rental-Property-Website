@@ -183,7 +183,22 @@ class SqlStorageService:
     def get_user_roles(self) -> dict:
         with self.db.read() as conn:
             rows = conn.execute("SELECT email, role FROM user_roles").fetchall()
-        return {row["email"]: row["role"] for row in rows}
+        # Drop rows whose email or role column isn't a string. The write path
+        # only stores strings, and SQLite's TEXT affinity coerces numeric
+        # inserts to text, so in normal operation this is a no-op — but a
+        # hand-inserted BLOB (which TEXT affinity leaves as bytes) or a
+        # raw-SQL edit could slip a non-string through. Every downstream
+        # caller (``AuthService.get_user_role`` / ``all_user_roles`` calling
+        # ``email.lower()``, ``admin_dashboard_combined`` iterating ``.items()``
+        # and comparing ``role != "revoked"``, the /admin/users role tally)
+        # would otherwise AttributeError / TypeError on the non-string and
+        # take out the admin UI via the crash handler's empty 503. Matches
+        # the isinstance guard PR #152 added on the file backend.
+        return {
+            row["email"]: row["role"]
+            for row in rows
+            if isinstance(row["email"], str) and isinstance(row["role"], str)
+        }
 
     def set_user_role(self, email: str, role: str) -> None:
         email = (email or "").lower()

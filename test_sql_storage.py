@@ -65,6 +65,28 @@ class UserRolesTestCase(SqlStorageBaseTestCase):
         existed = self.storage.delete_user_role("ghost@example.com")
         self.assertFalse(existed)
 
+    def test_get_user_roles_drops_non_string_email_or_role(self):
+        # SQLite's TEXT affinity coerces numeric inserts to text, but a raw
+        # BLOB inserted into a TEXT column round-trips back as ``bytes`` — a
+        # hand-inserted BLOB (or a raw-SQL edit slipping some other type in
+        # via a schema tweak) would otherwise reach ``AuthService.get_user_role``,
+        # whose ``email.lower()`` crashes on non-strings and takes out the
+        # admin UI via the crash handler's empty 503. Matches the isinstance
+        # guard PR #152 added on the file backend.
+        self.storage.set_user_role("keep@example.com", "admin")
+        with self.storage.db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO user_roles(email, role) VALUES (?, ?)",
+                (b"blob-email@example.com", "renter"),
+            )
+            conn.execute(
+                "INSERT INTO user_roles(email, role) VALUES (?, ?)",
+                ("blob-role@example.com", b"renter"),
+            )
+        self.assertEqual(
+            self.storage.get_user_roles(), {"keep@example.com": "admin"}
+        )
+
 
 class PendingRegistrationsTestCase(SqlStorageBaseTestCase):
     def test_add_and_get(self):
