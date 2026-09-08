@@ -138,6 +138,28 @@ class PendingRegistrationsTestCase(SqlStorageBaseTestCase):
         rows = self.storage.get_pending_registrations()
         self.assertEqual(rows, [{"email": "keep@example.com"}])
 
+    def test_get_pending_registrations_drops_malformed_json_payloads(self):
+        # A payload column corrupted to text that isn't valid JSON at all
+        # (a truncated INSERT, on-disk corruption, someone hand-editing the
+        # DB with a text editor) must not raise ``JSONDecodeError`` out to
+        # the crash handler's empty 503. The non-dict guard alone leaves
+        # this gap because ``json.loads`` runs before ``isinstance`` — that
+        # is what ``_safe_loads`` closes. Mirrors the try/except that
+        # ``analytics.recent_listing_activity`` already applies to the
+        # JSONL change log.
+        self.storage.add_pending_registration({"email": "keep@example.com"})
+        with self.storage.db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO pending_registrations(email, payload) VALUES (?, ?)",
+                ("truncated@example.com", '{"email": "trunca'),
+            )
+            conn.execute(
+                "INSERT INTO pending_registrations(email, payload) VALUES (?, ?)",
+                ("text@example.com", "not-json-at-all"),
+            )
+        rows = self.storage.get_pending_registrations()
+        self.assertEqual(rows, [{"email": "keep@example.com"}])
+
 
 class RenterProfilesTestCase(SqlStorageBaseTestCase):
     def test_save_and_get(self):
@@ -172,6 +194,29 @@ class RenterProfilesTestCase(SqlStorageBaseTestCase):
             conn.execute(
                 "INSERT INTO renter_profiles(email, profile) VALUES (?, ?)",
                 ("list@example.com", "[1, 2, 3]"),
+            )
+        profiles = self.storage.get_renter_profiles()
+        self.assertEqual(profiles, {"keep@example.com": {"name": "Renter R"}})
+
+    def test_get_renter_profiles_drops_malformed_json_payloads(self):
+        # A ``profile`` column containing text that isn't valid JSON at all
+        # (a truncated INSERT, on-disk corruption) must not raise
+        # ``JSONDecodeError`` out to the crash handler's empty 503 — the
+        # ``renter_profile`` route and ``_renter_email_default`` both iterate
+        # the returned mapping. ``_safe_loads`` swallows the decode error and
+        # drops the row, matching the try/except ``load_json_file`` applies
+        # on the file backend.
+        self.storage.save_renter_profiles(
+            {"keep@example.com": {"name": "Renter R"}}
+        )
+        with self.storage.db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO renter_profiles(email, profile) VALUES (?, ?)",
+                ("truncated@example.com", '{"name":'),
+            )
+            conn.execute(
+                "INSERT INTO renter_profiles(email, profile) VALUES (?, ?)",
+                ("garbage@example.com", "not-json-at-all"),
             )
         profiles = self.storage.get_renter_profiles()
         self.assertEqual(profiles, {"keep@example.com": {"name": "Renter R"}})
@@ -229,6 +274,26 @@ class RenterContractsTestCase(SqlStorageBaseTestCase):
         # accidentally see an empty renter entry.
         self.assertEqual(out, {"renter@example.com": [{"id": "c1"}]})
 
+    def test_get_renter_contracts_drops_malformed_json_payloads(self):
+        # A ``contract`` column corrupted to invalid JSON must not take out
+        # ``admin_contracts`` / the CSV export / ``_backfill_contract_ids``
+        # via the crash handler. ``_safe_loads`` drops the row instead of
+        # raising ``JSONDecodeError``.
+        self.storage.save_renter_contracts(
+            {"renter@example.com": [{"id": "c1"}]}
+        )
+        with self.storage.db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO renter_contracts(email, idx, contract) VALUES (?, ?, ?)",
+                ("renter@example.com", 1, '{"id": "c2"'),  # truncated
+            )
+            conn.execute(
+                "INSERT INTO renter_contracts(email, idx, contract) VALUES (?, ?, ?)",
+                ("other@example.com", 0, "not json"),
+            )
+        out = self.storage.get_renter_contracts()
+        self.assertEqual(out, {"renter@example.com": [{"id": "c1"}]})
+
 
 class TicketsTestCase(SqlStorageBaseTestCase):
     def test_save_and_load_via_path_shim(self):
@@ -270,6 +335,28 @@ class TicketsTestCase(SqlStorageBaseTestCase):
                 "INSERT INTO tickets(id, payload, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?)",
                 ("bad-list", "[1, 2, 3]", "2026-01-04", None),
+            )
+        loaded = self.storage.load_json_file(self.config.tickets_file, [])
+        self.assertEqual([t["id"] for t in loaded], ["t1"])
+
+    def test_load_tickets_drops_malformed_json_payloads(self):
+        # A tickets ``payload`` column corrupted to invalid JSON must not
+        # take out the admin dashboard, renter tickets list, or the ticket
+        # detail route via the crash handler. ``_safe_loads`` drops the row.
+        self.storage.save_json_file(
+            self.config.tickets_file,
+            [{"id": "t1", "title": "leak", "created_at": "2026-01-01"}],
+        )
+        with self.storage.db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO tickets(id, payload, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?)",
+                ("bad-truncated", '{"id":"x"', "2026-01-02", None),
+            )
+            conn.execute(
+                "INSERT INTO tickets(id, payload, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?)",
+                ("bad-text", "totally not json", "2026-01-03", None),
             )
         loaded = self.storage.load_json_file(self.config.tickets_file, [])
         self.assertEqual([t["id"] for t in loaded], ["t1"])
@@ -329,6 +416,24 @@ class LeadCapturesTestCase(SqlStorageBaseTestCase):
             conn.execute(
                 "INSERT INTO lead_captures(email, payload) VALUES (?, ?)",
                 ("garbage@example.com", '"not a dict"'),
+            )
+        leads = self.storage.get_pending_lead_captures()
+        self.assertEqual(leads, [{"email": "keep@example.com"}])
+
+    def test_get_pending_lead_captures_drops_malformed_json_payloads(self):
+        # A lead-captures ``payload`` column corrupted to invalid JSON must
+        # not take out the admin lead-review UI or the public
+        # ``add_pending_lead_capture`` dedup walk (which reloads the whole
+        # table) with a ``JSONDecodeError``. ``_safe_loads`` drops the row.
+        self.storage.add_pending_lead_capture({"email": "keep@example.com"})
+        with self.storage.db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO lead_captures(email, payload) VALUES (?, ?)",
+                ("truncated@example.com", '{"email":"trunc'),
+            )
+            conn.execute(
+                "INSERT INTO lead_captures(email, payload) VALUES (?, ?)",
+                ("text@example.com", "no json here"),
             )
         leads = self.storage.get_pending_lead_captures()
         self.assertEqual(leads, [{"email": "keep@example.com"}])
