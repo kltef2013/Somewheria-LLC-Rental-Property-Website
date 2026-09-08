@@ -58,6 +58,29 @@ class SqlStorageService:
 
     # ---------------------------------------------------------------- helpers
 
+    def _safe_loads(self, text, *, source: str):
+        """Deserialize a JSON column value, returning ``None`` on decode failure.
+
+        The write paths only ever store valid JSON, so in normal operation this
+        is a no-op — but a hand-edited row / a partial INSERT / on-disk
+        corruption can leave malformed JSON in a ``payload`` / ``profile`` /
+        ``contract`` column. A bare ``json.loads`` would raise
+        ``JSONDecodeError`` up through the caller and take out the admin
+        dashboard, renter dashboard, or ticket routes via the crash handler's
+        empty 503. Callers pair this with the existing ``isinstance(dict)``
+        filter so a ``None`` return simply drops the row, matching the
+        already-shipped defensive shape for non-dict-but-valid JSON.
+        Mirrors the ``json.loads`` try/except ``analytics.recent_listing_activity``
+        already applies to the JSONL change log, and closes the same gap on
+        the file backend's ``load_json_file`` (which wraps its own decode in
+        a try/except and returns the caller's default on failure).
+        """
+        try:
+            return loads(text)
+        except (ValueError, TypeError) as exc:
+            self.logger.warning("Skipping malformed JSON row in %s: %s", source, exc)
+            return None
+
     # (config attribute name, routing key). ``getattr`` with a ``None``
     # default means a config missing one of these attributes reports an
     # unknown path (falls back to the caller's default / no-op) rather
@@ -142,8 +165,14 @@ class SqlStorageService:
         # (dedup, admin_registrations render, remove) calls ``.get("email")``
         # on each item, which would AttributeError and 503 the admin UI via
         # the crash handler. Matches the FileStorageService guard added
-        # alongside this change.
-        return [payload for payload in (loads(row["payload"]) for row in rows) if isinstance(payload, dict)]
+        # alongside this change. ``_safe_loads`` also swallows malformed JSON
+        # so an on-disk-corrupted row can't take the caller down with a
+        # ``JSONDecodeError`` before the dict filter even runs.
+        return [
+            payload
+            for payload in (self._safe_loads(row["payload"], source="pending_registrations") for row in rows)
+            if isinstance(payload, dict)
+        ]
 
     def add_pending_registration(self, registration: dict) -> bool:
         email = (registration.get("email") or "").strip().lower()
@@ -245,7 +274,7 @@ class SqlStorageService:
         # tables landed in PRs #146 / #147.
         out: dict = {}
         for row in rows:
-            profile = loads(row["profile"])
+            profile = self._safe_loads(row["profile"], source="renter_profiles")
             if isinstance(profile, dict):
                 out[row["email"]] = profile
         return out
@@ -277,7 +306,7 @@ class SqlStorageService:
         # added for tickets and lead captures.
         out: dict[str, list] = {}
         for row in rows:
-            contract = loads(row["contract"])
+            contract = self._safe_loads(row["contract"], source="renter_contracts")
             if isinstance(contract, dict):
                 out.setdefault(row["email"], []).append(contract)
         return out
@@ -307,7 +336,14 @@ class SqlStorageService:
         # ``.get(...)`` on each entry, which would AttributeError and 503
         # the ticket / dashboard routes via the crash handler. Matches the
         # same guard ``TicketService._load`` applies for the file backend.
-        return [payload for payload in (loads(row["payload"]) for row in rows) if isinstance(payload, dict)]
+        # ``_safe_loads`` also swallows malformed JSON so a corrupted
+        # ``payload`` column can't take the caller down before the dict
+        # filter runs.
+        return [
+            payload
+            for payload in (self._safe_loads(row["payload"], source="tickets") for row in rows)
+            if isinstance(payload, dict)
+        ]
 
     def _save_tickets(self, tickets: list[dict]) -> None:
         with self.db.transaction() as conn:
@@ -337,8 +373,14 @@ class SqlStorageService:
         # Same isinstance(dict) guard as ``get_pending_registrations`` — a
         # payload column corrupted to non-object JSON would otherwise crash
         # the dedup check in ``add_pending_lead_capture`` and the filter in
-        # ``remove_pending_lead_capture`` with AttributeError.
-        return [payload for payload in (loads(row["payload"]) for row in rows) if isinstance(payload, dict)]
+        # ``remove_pending_lead_capture`` with AttributeError. ``_safe_loads``
+        # also swallows malformed JSON so a truncated / corrupted row can't
+        # take the caller down before the dict filter runs.
+        return [
+            payload
+            for payload in (self._safe_loads(row["payload"], source="lead_captures") for row in rows)
+            if isinstance(payload, dict)
+        ]
 
     def add_pending_lead_capture(self, lead: dict) -> bool:
         # Mirror FileStorageService: de-duplicate by email so a repeated
