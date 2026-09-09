@@ -248,7 +248,17 @@ class FileStorageService:
 
     def get_hidden_listing_ids(self) -> list[str]:
         ids = self.load_json_file(self.config.hidden_listings_file, [], expected_type=list)
-        return [str(item) for item in ids]
+        # Drop entries that aren't non-empty strings. ``expected_type=list``
+        # only verifies the top-level container; a corrupted / hand-edited
+        # file can still slip a ``null``, a bare number, a nested dict, or
+        # an empty string into the array. A bare ``[str(item) for item in
+        # ids]`` would turn those into "None", "42", "{}" — junk strings
+        # that never match a real property id but still sit in the hidden
+        # set forever (or, worse, an empty string that silently hides every
+        # property whose id round-trips to ""). Matches the isinstance
+        # guards PRs #144-#153 added on the change log, tickets, user
+        # roles, pending registrations, lead captures, and profiles.
+        return [item for item in ids if isinstance(item, str) and item]
 
     def set_listing_hidden(self, property_id: str, hidden: bool) -> None:
         property_id = str(property_id)

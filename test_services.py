@@ -556,6 +556,30 @@ class FileStorageServiceTestCase(unittest.TestCase):
             },
         )
 
+    def test_get_hidden_listing_ids_drops_non_string_and_empty_entries(self):
+        # ``expected_type=list`` verifies the outer container but not each
+        # entry. A hand-edited / corrupted ``hidden_listings.json`` can slip
+        # a ``null``, a bare number, a nested dict, or an empty string into
+        # the array. The previous ``[str(item) for item in ids]`` turned
+        # those into "None", "42", "{}" — junk strings that never match a
+        # real property id but still sit in the hidden set forever (via
+        # ``PropertyService.hidden_listing_ids`` wrapping the return value
+        # in ``set(...)``). An empty string is worse: nothing legitimately
+        # has id "", so it's noise, but if a property ever normalized to
+        # id "" it would be silently hidden. Matches the isinstance guards
+        # PRs #144-#153 added on the rest of the storage surface.
+        raw = [
+            "prop-1",
+            None,
+            42,
+            {"nested": "dict"},
+            "",
+            "prop-2",
+        ]
+        with patch.object(self.service, "load_json_file", return_value=raw):
+            loaded = self.service.get_hidden_listing_ids()
+        self.assertEqual(loaded, ["prop-1", "prop-2"])
+
     def test_set_user_role_lowercases_email_and_saves(self):
         with patch.object(self.service, "get_user_roles", return_value={}), patch.object(
             self.service,
