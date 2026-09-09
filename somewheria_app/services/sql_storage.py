@@ -15,7 +15,6 @@ as a routing key — ``config.tickets_file`` routes to the ``tickets`` table.
 from __future__ import annotations
 
 import contextlib
-import json
 import os
 import tempfile
 import threading
@@ -357,7 +356,7 @@ class SqlStorageService:
                     "VALUES (?, ?, ?, ?)",
                     (
                         str(tid),
-                        json.dumps(ticket),
+                        dumps(ticket),
                         ticket.get("created_at"),
                         ticket.get("updated_at"),
                     ),
@@ -429,7 +428,22 @@ class SqlStorageService:
             rows = conn.execute(
                 "SELECT property_id FROM hidden_listings ORDER BY property_id"
             ).fetchall()
-        return [row["property_id"] for row in rows]
+        # Drop rows whose property_id isn't a non-empty string. The write path
+        # coerces to ``str(property_id)`` before insert, so in normal operation
+        # this is a no-op — but a hand-inserted NULL (SQLite doesn't enforce
+        # NOT NULL on a TEXT PRIMARY KEY) or a BLOB coerced through TEXT
+        # affinity could slip a non-string in. Downstream callers
+        # (``PropertyService.hidden_listing_ids`` wrapping in ``set(...)`` for
+        # membership checks against ``str(item.get("id"))``) treat every entry
+        # as a string; a stray ``None`` would sit in the set without ever
+        # matching a real property id, and an empty string would silently hide
+        # every property whose id round-trips to ``""``. Matches the isinstance
+        # guard PRs #152 / #153 added on user_roles.
+        return [
+            row["property_id"]
+            for row in rows
+            if isinstance(row["property_id"], str) and row["property_id"]
+        ]
 
     def set_listing_hidden(self, property_id: str, hidden: bool) -> None:
         property_id = str(property_id)

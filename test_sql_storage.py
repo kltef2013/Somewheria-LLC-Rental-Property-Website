@@ -528,6 +528,34 @@ class HiddenListingsTestCase(SqlStorageBaseTestCase):
             self.storage.get_hidden_listing_ids(), ["fresh-1", "fresh-2"]
         )
 
+    def test_get_hidden_listing_ids_drops_non_string_and_empty_rows(self):
+        # ``set_listing_hidden`` and ``_replace_hidden_listings`` both coerce
+        # to ``str(...)`` before insert, so the write path never produces
+        # non-strings — but SQLite doesn't enforce NOT NULL on a TEXT
+        # PRIMARY KEY, so a hand-inserted NULL (or a BLOB slipping through
+        # TEXT affinity) can land in ``property_id``. Downstream
+        # ``PropertyService.hidden_listing_ids`` wraps the return in
+        # ``set(...)`` and compares against ``str(item.get("id"))`` per
+        # property: a stray ``None`` never matches anything and just wastes
+        # a slot in the set, and an empty string would silently hide every
+        # property whose id round-trips to "". Match the isinstance guards
+        # PRs #152 / #153 added on user_roles. Insert the bad rows via raw
+        # SQL because the public API refuses them.
+        self.storage.set_listing_hidden("prop-1", True)
+        with self.storage.db.transaction() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO hidden_listings(property_id) VALUES (?)",
+                (None,),
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO hidden_listings(property_id) VALUES (?)",
+                ("",),
+            )
+        self.storage.set_listing_hidden("prop-2", True)
+        self.assertEqual(
+            self.storage.get_hidden_listing_ids(), ["prop-1", "prop-2"]
+        )
+
 
 class PathShimUnknownPathTestCase(SqlStorageBaseTestCase):
     """An unrecognised path must NOT silently corrupt or crash."""
