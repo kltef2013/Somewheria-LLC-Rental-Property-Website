@@ -1486,6 +1486,36 @@ class ExpandedRouteCoverageTestCase(unittest.TestCase):
         self.assertIn(b"YYYY-MM-DD", response.data)
         save_contracts_mock.assert_not_called()
 
+    def test_admin_contracts_add_rejects_non_extended_iso_shapes(self):
+        # ``datetime.date.fromisoformat`` on 3.11+ accepts extra ISO 8601
+        # shapes that happen to be 10 characters long — the week date
+        # ``2030-W12-1`` (parses as 2030-03-18) and the basic form with
+        # trailing garbage ``"20301212XX"`` (parses as 2030-12-12) — so a
+        # length-only check would let them into renter_contracts storage.
+        # The admin dashboard would then render the literal junk string as
+        # the contract's term. Reject both at the boundary.
+        self.login_as("admin")
+        for bad in ("2030-W12-1", "20301212XX"):
+            with patch.object(
+                self.services.storage, "get_renter_contracts", return_value={}
+            ), patch.object(
+                self.services.storage, "save_renter_contracts"
+            ) as save_contracts_mock:
+                response = self.client.post(
+                    "/admin/contracts",
+                    data={
+                        "action": "add",
+                        "renter_email": "renter@example.com",
+                        "property_name": "Maple House",
+                        "start_date": bad,
+                        "end_date": "2030-12-31",
+                        "status": "Active",
+                    },
+                )
+                self.assertEqual(response.status_code, 200, msg=bad)
+                self.assertIn(b"YYYY-MM-DD", response.data, msg=bad)
+                save_contracts_mock.assert_not_called()
+
     def test_admin_contracts_add_rejects_end_before_start(self):
         # Contracts whose end precedes their start are nonsense and would
         # classify as "ended" the moment they're saved. The most common

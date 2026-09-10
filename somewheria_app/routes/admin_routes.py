@@ -825,15 +825,23 @@ def renter_profile():
     return render_template("renter_profile.html", profile=profile, user=user, success=success, title="Edit Profile")
 
 
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
 def _valid_iso_date(value: str) -> bool:
     """Return True if ``value`` is a strict YYYY-MM-DD calendar date.
 
-    ``date.fromisoformat`` on 3.11+ accepts other ISO 8601 shapes (with a
-    time component, week dates, ordinal dates); admin contracts store the
-    date-only form, so we enforce that shape explicitly rather than
-    relying on the parser's incidental strictness.
+    ``date.fromisoformat`` on 3.11+ accepts other ISO 8601 shapes — the
+    week date ``2020-W12-1`` and the basic form with trailing garbage
+    ``"20201212XX"`` both parse cleanly, and both happen to be 10 chars,
+    so a length check alone lets them through. The regex enforces the
+    exact ``YYYY-MM-DD`` extended-form shape admin contracts store; the
+    ``fromisoformat`` call then confirms the month/day are a real date.
+    Without both checks a hand-crafted POST could smuggle a non-canonical
+    date string into ``renter_contracts`` where templates render it as
+    the contract's term.
     """
-    if not isinstance(value, str) or len(value) != 10:
+    if not isinstance(value, str) or not _ISO_DATE_RE.match(value):
         return False
     try:
         datetime.date.fromisoformat(value)
