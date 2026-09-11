@@ -195,6 +195,26 @@ def image_edit_notify():
         return jsonify(message="Failed to send notification."), 500
 
 
+def _contract_str_field(contract: dict, key: str) -> str:
+    """Return a stripped string for ``contract[key]`` or ``""`` if absent /
+    non-string.
+
+    ``_classify_contract_status`` used to reach for ``.strip()`` / ``.lower()``
+    directly on the raw values, and ``(value or "")`` only coerces when the
+    stored value is falsy (``None``, ``""``). A hand-edited /
+    externally-migrated ``renter_contracts`` row that put a non-string under
+    ``status`` / ``start_date`` / ``end_date`` — an integer date like
+    ``20241231``, or a JSON ``true`` under ``status`` — would sail past that
+    guard, then raise ``AttributeError: 'int' object has no attribute 'strip'``
+    inside the classifier and take out ``renter_dashboard`` /
+    ``contract_detail`` via the crash handler's empty 503.
+    """
+    value = contract.get(key)
+    if not isinstance(value, str):
+        return ""
+    return value.strip()
+
+
 def _classify_contract_status(contract: dict) -> str:
     """Normalize a contract's status into one of: active / pending / ended.
 
@@ -202,7 +222,7 @@ def _classify_contract_status(contract: dict) -> str:
     field is unset or unrecognized. The classification is used purely for the
     dashboard summary — admins can still set any free-form status string.
     """
-    raw = (contract.get("status") or "").strip().lower()
+    raw = _contract_str_field(contract, "status").lower()
     if raw in {"active", "current"}:
         return "active"
     if raw in {"pending", "upcoming", "draft"}:
@@ -210,7 +230,7 @@ def _classify_contract_status(contract: dict) -> str:
     if raw in {"ended", "expired", "terminated", "closed"}:
         return "ended"
     # Infer from end_date if status is unrecognized.
-    end_date = (contract.get("end_date") or "").strip()
+    end_date = _contract_str_field(contract, "end_date")
     if end_date:
         try:
             end = datetime.date.fromisoformat(end_date[:10])
@@ -218,7 +238,7 @@ def _classify_contract_status(contract: dict) -> str:
                 return "ended"
         except ValueError:
             pass
-    start_date = (contract.get("start_date") or "").strip()
+    start_date = _contract_str_field(contract, "start_date")
     if start_date:
         try:
             start = datetime.date.fromisoformat(start_date[:10])
