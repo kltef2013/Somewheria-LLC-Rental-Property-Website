@@ -2298,6 +2298,32 @@ class ExpandedRouteCoverageTestCase(unittest.TestCase):
         # so callers (dashboard render) can use it without an extra call.
         self.assertIn("status_class", contracts[0])
 
+    def test_classify_contract_status_survives_non_string_fields(self):
+        """A hand-edited / externally-migrated ``renter_contracts`` row whose
+        ``status`` or ``start_date`` / ``end_date`` was written as a non-string
+        (e.g. an integer date like ``20241231``, or a JSON ``true`` under
+        ``status``) used to crash ``_classify_contract_status`` with
+        ``AttributeError: 'int' object has no attribute 'strip'`` — the
+        ``(value or "")`` coercion only handles falsy values, not stray types.
+        The crash would then take out ``renter_dashboard`` and
+        ``contract_detail`` via the crash handler's empty 503. Coerce
+        non-string values to ``""`` so classification falls back to "active"
+        instead of raising.
+        """
+        from somewheria_app.routes.admin_routes import _classify_contract_status
+
+        for stray in (
+            {"status": 42, "start_date": "", "end_date": ""},
+            {"status": True, "start_date": "", "end_date": ""},
+            {"status": ["Active"], "start_date": "", "end_date": ""},
+            {"status": "", "start_date": 20240101, "end_date": ""},
+            {"status": "", "start_date": "", "end_date": 20241231},
+            {"status": None, "start_date": None, "end_date": None},
+        ):
+            # Must not raise, and must yield one of the three canonical labels.
+            result = _classify_contract_status(stray)
+            self.assertIn(result, {"active", "pending", "ended"}, msg=stray)
+
     def test_contract_detail_recomputes_stale_status_class(self):
         """A ``status_class`` persisted by an earlier backfill (before the
         fix) can become stale as dates advance; the detail route must
