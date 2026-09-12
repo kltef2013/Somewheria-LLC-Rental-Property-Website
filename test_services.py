@@ -1688,6 +1688,40 @@ class NotificationServiceTestCase(unittest.TestCase):
         # Oldest retained entry is index 200 (700 - 500).
         self.assertIn("line 200", entries[-1]["message"])
 
+    def test_read_logs_skips_non_string_fields_in_json_rows(self):
+        # A corrupted / hand-edited JSON log row where ``message`` is ``null``
+        # (or a bare number) used to crash the viewer at
+        # ``ansi_escape.sub("", message)`` with ``TypeError`` when
+        # ``component`` was absent (the intervening f-string couldn't coerce
+        # it first), taking the /logs page out via the crash handler's 503.
+        # Every field should now coerce safely to a string so the row still
+        # renders.
+        log_text = (
+            '{"timestamp": "2026-07-06T18:47:42", "level": "INFO", '
+            '"request_id": "abc12345", "message": null}\n'
+            '{"timestamp": "2026-07-06T18:47:43", "level": "INFO", '
+            '"request_id": "def67890", "message": 42}\n'
+            '{"timestamp": 123, "level": 7, "request_id": null, '
+            '"message": "ok"}\n'
+        )
+        with patch.object(Path, "exists", return_value=True), patch.object(
+            Path, "open", mock_open(read_data=log_text)
+        ):
+            entries = self.service.read_logs()
+
+        self.assertEqual(len(entries), 3)
+        # Newest-first ordering.
+        self.assertEqual(entries[2]["message"], "")
+        self.assertEqual(entries[2]["request_id"], "abc12345")
+        self.assertEqual(entries[1]["message"], "42")
+        self.assertEqual(entries[1]["request_id"], "def67890")
+        # Non-string request_id falls back to "-"; non-string level/timestamp
+        # coerce to their str() form so the row still renders.
+        self.assertEqual(entries[0]["request_id"], "-")
+        self.assertEqual(entries[0]["level"], "7")
+        self.assertEqual(entries[0]["timestamp"], "123")
+        self.assertEqual(entries[0]["message"], "ok")
+
 
 class PropertyWritePathTestCase(unittest.TestCase):
     def setUp(self):

@@ -297,11 +297,32 @@ class NotificationService:
                     except (ValueError, TypeError):
                         obj = None
                     if isinstance(obj, dict):
-                        timestamp = obj.get("timestamp", "")
-                        level = obj.get("level", "")
-                        message = obj.get("message", "")
-                        component = obj.get("component", "")
-                        request_id = obj.get("request_id", "-") or "-"
+                        # Coerce every field to a string. In normal operation
+                        # the writer only emits strings, but a hand-edited /
+                        # corrupted JSON row where ``message`` is ``null`` or a
+                        # number would otherwise raise ``TypeError`` inside
+                        # ``ansi_escape.sub`` below (when ``component`` is
+                        # absent so the intervening f-string doesn't coerce
+                        # it first) and take the /logs viewer out via the
+                        # crash handler's empty 503. Mirrors the isinstance
+                        # guards PRs #144 / #147 / #148 already apply on the
+                        # change-log JSONL, tickets, and renter profiles.
+                        timestamp = obj.get("timestamp") or ""
+                        if not isinstance(timestamp, str):
+                            timestamp = str(timestamp)
+                        level_raw = obj.get("level") or ""
+                        level = level_raw if isinstance(level_raw, str) else str(level_raw)
+                        message_raw = obj.get("message")
+                        if message_raw is None:
+                            message = ""
+                        elif isinstance(message_raw, str):
+                            message = message_raw
+                        else:
+                            message = str(message_raw)
+                        component_raw = obj.get("component") or ""
+                        component = component_raw if isinstance(component_raw, str) else str(component_raw)
+                        request_id_raw = obj.get("request_id")
+                        request_id = request_id_raw if isinstance(request_id_raw, str) and request_id_raw else "-"
                         if component:
                             message = f"[{component}] {message}"
                     else:
